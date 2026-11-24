@@ -456,6 +456,8 @@ pub fn builtin_cats() -> Vec<CatSkinConfig> {
             accent_side_color: Some("#2563eb".to_string()),
             spots: vec![],
         },
+        serde_json::from_str(include_str!("../../src/assets/orange-white-longhair/skin.json"))
+            .expect("valid built-in orange-white longhair skin"),
     ]
 }
 

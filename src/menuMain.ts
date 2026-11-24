@@ -1,3 +1,4 @@
+import { usesCanvasCat } from './longhairCoat';
 import './style.css';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
@@ -224,7 +225,7 @@ function syncUI(): void {
   const activeCat = catList.find((c) => c.id === settings.catBreed) ?? catList[0];
   renderBreedPills();
 
-  const renderMode = settings.renderMode === '2d' ? '2d' : '3d';
+  const renderMode = settings.renderMode === '2d' || usesCanvasCat(settings.catBreed) ? '2d' : '3d';
   const collarColor =
     settings.collarColor === 'red' ||
     settings.collarColor === 'blue' ||
@@ -234,13 +235,14 @@ function syncUI(): void {
       : 'none';
   document.querySelectorAll<HTMLButtonElement>('[data-rendermode]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.rendermode === renderMode);
+    btn.disabled = usesCanvasCat(settings.catBreed) && btn.dataset.rendermode !== '2d';
   });
   document.querySelectorAll<HTMLButtonElement>('[data-collar]').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.collar === collarColor);
   });
   const collarRowEl = document.getElementById('collar-row');
   if (collarRowEl) {
-    collarRowEl.classList.toggle('hidden', renderMode === '2d' || settings.catBreed === 'dafeiyu');
+    collarRowEl.classList.toggle('hidden', renderMode === '2d' || usesCanvasCat(settings.catBreed));
   }
 
   const headphoneMode =
@@ -252,7 +254,7 @@ function syncUI(): void {
   });
   const headphoneRowEl = document.getElementById('headphone-row');
   if (headphoneRowEl) {
-    headphoneRowEl.classList.toggle('hidden', settings.catBreed === 'dafeiyu');
+    headphoneRowEl.classList.toggle('hidden', usesCanvasCat(settings.catBreed));
   }
 
   const headerEl = document.getElementById('menu-header');

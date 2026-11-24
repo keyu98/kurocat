@@ -1,3 +1,5 @@
+import orangeWhiteLonghair from './assets/orange-white-longhair/skin.json';
+
 export interface CatSpot {
   part: 'head' | 'body' | 'leftArm' | 'rightArm';
   x: number;
@@ -186,6 +188,8 @@ export function resolveCustomSkin(raw: CatSkinConfig): ResolvedSkin {
   };
 }
 
+export const ORANGE_WHITE_LONGHAIR = orangeWhiteLonghair as CatSkinConfig;
+
 export const DEFAULT_BUILTIN_CATS: CatSkinConfig[] = [
   {
     id: 'black',
@@ -217,4 +221,5 @@ export const DEFAULT_BUILTIN_CATS: CatSkinConfig[] = [
     accentColor: '#5cc8ff',
     accentSideColor: '#2563eb',
   },
+  ORANGE_WHITE_LONGHAIR,
 ];

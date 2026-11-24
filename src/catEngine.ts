@@ -1,3 +1,4 @@
+import { LONGHAIR_CAT_ID, LONGHAIR_BODY_SLICES, furryEdge, drawLonghairRuff, drawLonghairTail, drawLonghairFaceFur } from './longhairCoat';
 import {
   KEYBOARD_KEYS_65,
   KEYBOARD_KEYS_108,
@@ -908,13 +909,15 @@ export class KuroCatEngine {
     this.onAfterRender?.();
 
     if (this.rafId !== frameId) return;
-    const active = now - this.lastActivityAt < IDLE_RENDER_AFTER_MS;
+    // Keep this procedural companion smooth even during idle breathing and sleep.
+    const active = this.customSkin?.id === LONGHAIR_CAT_ID || now - this.lastActivityAt < IDLE_RENDER_AFTER_MS;
 
     // Smart adaptive frame pacing:
     // - 60Hz normal mode: native direct rAF
     // - 120-240Hz normal mode: 60 FPS cap
     // - Game Eco Mode (foreground PC game detected): 30 FPS cap
-    // - Idle awake: ~18 FPS (55ms); Deep sleep: ~12 FPS (85ms)
+    // - Other cats idle awake: ~18 FPS (55ms); deep sleep: ~12 FPS (85ms)
+    // - Longhair companion: continuous 60 FPS, or 30 FPS in Game Eco Mode
     if (active && (this.vsyncSamples < 8 || (!this.gameActive && this.vsyncMs >= 13.5))) {
       this.isIdlePacing = false;
       this.directRafPrevMs = now;
@@ -2524,6 +2527,12 @@ export class KuroCatEngine {
 
     if (this.customSkin) {
       const s = this.customSkin;
+      if (s.id === LONGHAIR_CAT_ID) {
+        drawLonghairTail(ctx, { x: startX, y: startY }, { x: cp1X, y: cp1Y },
+          { x: cp2X, y: cp2Y }, { x: endX, y: endY }, s.tailColor, s.tailTipColor);
+        ctx.restore();
+        return;
+      }
       const tailW = s.tailFluffy ? 20.0 : 16.0;
       if (s.outlineColor) {
         ctx.shadowColor = 'rgba(30, 32, 40, 0.22)';
@@ -4362,6 +4371,7 @@ export class KuroCatEngine {
     breath: number,
     purrShift: number,
   ): void {
+    const isLonghair = s.id === LONGHAIR_CAT_ID;
     const leftPts: Vec2[] = [];
     const rightPts: Vec2[] = [];
     const bellySwell = 1 + this.typingHunch * 0.04 + this.sleepAmount * 0.085;
@@ -4369,7 +4379,7 @@ export class KuroCatEngine {
     const hcx = headCenter.x + purrShift;
     const hcy = headCenter.y;
 
-    for (const slice of BODY_SLICES) {
+    for (const slice of isLonghair ? LONGHAIR_BODY_SLICES : BODY_SLICES) {
       const sp = this.spinePoint(slice.t, breath);
       const widen = slice.t > 0.45 ? bellySwell : 1;
       const hw = slice.hw * widen;
@@ -4399,8 +4409,8 @@ export class KuroCatEngine {
 
     ctx.save();
     ctx.shadowColor = s.isDarkBase ? 'rgba(18, 17, 18, 0.42)' : 'rgba(30, 32, 42, 0.22)';
-    ctx.shadowBlur = s.isDarkBase ? 1.6 : 5;
-    if (!s.isDarkBase) ctx.shadowOffsetY = 2;
+    ctx.shadowBlur = isLonghair ? 0 : s.isDarkBase ? 1.6 : 5;
+    if (!s.isDarkBase && !isLonghair) ctx.shadowOffsetY = 2;
 
     // 1) Grounded hind paws always rendered in seated posture (no idle disappear/blink; Fixes #1)
     ctx.fillStyle = s.pawColor;
@@ -4427,20 +4437,31 @@ export class KuroCatEngine {
       ctx.beginPath();
       const crownCos = Math.cos(this.headTilt);
       const crownSin = Math.sin(this.headTilt);
-      ctx.moveTo(leftPts[0].x + 14 * crownCos + 6 * crownSin, leftPts[0].y + 14 * crownSin - 6 * crownCos);
-      ctx.quadraticCurveTo(crownPt.x, crownPt.y - 2, rightPts[0].x - 14 * crownCos + 6 * crownSin, rightPts[0].y - 14 * crownSin - 6 * crownCos);
-      ctx.lineTo(rightPts[0].x, rightPts[0].y);
+      if (isLonghair) {
+        // A rounded forehead leaves room for the M stripes above the round eyes.
+        const topX = hcx + 43 * crownSin;
+        const topY = hcy - 43 * crownCos;
+        ctx.moveTo(leftPts[0].x, leftPts[0].y);
+        ctx.bezierCurveTo(topX - 37 * crownCos, topY - 37 * crownSin,
+          topX + 37 * crownCos, topY + 37 * crownSin, rightPts[0].x, rightPts[0].y);
+      } else {
+        ctx.moveTo(leftPts[0].x + 14 * crownCos + 6 * crownSin, leftPts[0].y + 14 * crownSin - 6 * crownCos);
+        ctx.quadraticCurveTo(crownPt.x, crownPt.y - 2, rightPts[0].x - 14 * crownCos + 6 * crownSin, rightPts[0].y - 14 * crownSin - 6 * crownCos);
+        ctx.lineTo(rightPts[0].x, rightPts[0].y);
+      }
       for (let i = 0; i < rightPts.length - 1; i++) {
         const p0 = rightPts[i];
         const p1 = rightPts[i + 1];
-        ctx.quadraticCurveTo(p0.x, p0.y, (p0.x + p1.x) * 0.5, (p0.y + p1.y) * 0.5);
+        if (isLonghair) furryEdge(ctx, p0, p1, 1);
+        else ctx.quadraticCurveTo(p0.x, p0.y, (p0.x + p1.x) * 0.5, (p0.y + p1.y) * 0.5);
       }
       ctx.lineTo(rightPts[rightPts.length - 1].x, rightPts[rightPts.length - 1].y);
       ctx.quadraticCurveTo(basePt.x + purrShift, basePt.y + 6, leftPts[leftPts.length - 1].x, leftPts[leftPts.length - 1].y);
       for (let i = leftPts.length - 1; i > 0; i--) {
         const p0 = leftPts[i];
         const p1 = leftPts[i - 1];
-        ctx.quadraticCurveTo(p0.x, p0.y, (p0.x + p1.x) * 0.5, (p0.y + p1.y) * 0.5);
+        if (isLonghair) furryEdge(ctx, p0, p1, -1);
+        else ctx.quadraticCurveTo(p0.x, p0.y, (p0.x + p1.x) * 0.5, (p0.y + p1.y) * 0.5);
       }
       ctx.lineTo(leftPts[0].x, leftPts[0].y);
       ctx.closePath();
@@ -4462,7 +4483,7 @@ export class KuroCatEngine {
     const midTorso = this.spinePoint(0.70, breath);
     const chestSp = this.spinePoint(0.56, breath);
 
-    if (s.flankColor) {
+    if (s.flankColor && !isLonghair) {
       for (const sgn of [-1, 1]) {
         ctx.save();
         ctx.globalAlpha = 0.62;
@@ -4545,7 +4566,20 @@ export class KuroCatEngine {
     ctx.rotate(this.headTilt);
     const maskShift = this.faceTurnX * 0.72;
 
-    if (s.pattern === 'bicolor' && s.maskColor) {
+    if (isLonghair) {
+      // Narrow white blaze continues into the white muzzle, with ginger on both cheeks.
+      const ginger = ctx.createLinearGradient(0, -48, 0, 22);
+      ginger.addColorStop(0, blendHex(s.maskColor || '#dc954f', '#fff2d8', 0.2));
+      ginger.addColorStop(1, s.maskColor || '#dc954f');
+      ctx.fillStyle = ginger;
+      ctx.beginPath();
+      ctx.moveTo(-80, -55); ctx.lineTo(80, -55); ctx.lineTo(78, 13);
+      ctx.quadraticCurveTo(45, 26, 25, 16);
+      ctx.quadraticCurveTo(13, 8, 8, -16);
+      ctx.lineTo(3, -41); ctx.lineTo(-4, -37); ctx.lineTo(-9, -13);
+      ctx.quadraticCurveTo(-13, 8, -26, 17);
+      ctx.quadraticCurveTo(-48, 25, -78, 12); ctx.closePath(); ctx.fill();
+    } else if (s.pattern === 'bicolor' && s.maskColor) {
       ctx.save();
       ctx.fillStyle = s.maskColor;
       ctx.shadowColor = s.maskColor;
@@ -4664,6 +4698,11 @@ export class KuroCatEngine {
       ctx.restore();
     }
 
+    if (isLonghair) {
+      const ruff = this.spinePoint(0.48, breath);
+      drawLonghairRuff(ctx, { x: ruff.x + purrShift, y: ruff.y });
+    }
+
     // 4) Ears, face features & eyes in head-space
     ctx.save();
     ctx.translate(hcx, hcy);
@@ -4728,6 +4767,15 @@ export class KuroCatEngine {
         ctx.fill();
       }
 
+      if (isLonghair) {
+        ctx.strokeStyle = s.earTuftColor || '#fff4df';
+        ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath(); ctx.moveTo(sideSign * (3 + i * 2), -17);
+          ctx.quadraticCurveTo(sideSign * (7 + i), -25, sideSign * (5 + i * 3), -30 - i * 2);
+          ctx.stroke();
+        }
+      }
       if (s.earTuftColor) {
         ctx.strokeStyle = s.earTuftColor;
         ctx.lineWidth = 1.5;
@@ -4746,9 +4794,24 @@ export class KuroCatEngine {
     drawCustomEar(-1, lTwitch);
     drawCustomEar(1, rTwitch);
 
+    if (isLonghair) {
+      ctx.strokeStyle = s.stripeColor || '#a85b2b';
+      ctx.lineWidth = 3.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      for (const sign of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(sign * 10, -27); ctx.lineTo(sign * 17, -18);
+        ctx.lineTo(sign * 24, -27); ctx.lineTo(sign * 32, -18);
+        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(sign * 57, -1);
+        ctx.quadraticCurveTo(sign * 49, 2, sign * 44, 1); ctx.stroke();
+      }
+    }
+
     ctx.shadowBlur = 0;
     ctx.shadowOffsetY = 0;
     const wShift = this.faceTurnX * 0.72;
+
+    if (isLonghair) drawLonghairFaceFur(ctx);
 
     // Blush on petting
     if (s.blushColor && this.squintAmount > 0.12) {
@@ -4788,18 +4851,18 @@ export class KuroCatEngine {
     ctx.strokeStyle = s.whiskerColor;
     ctx.lineWidth = 1.1;
     ctx.lineCap = 'round';
-    const leftLen = Math.max(8, 12 - this.faceTurnX * 0.55);
-    const rightLen = Math.max(8, 12 + this.faceTurnX * 0.55);
+    const leftLen = Math.max(8, (isLonghair ? 65 : 12) - this.faceTurnX * 0.55);
+    const rightLen = Math.max(8, (isLonghair ? 65 : 12) + this.faceTurnX * 0.55);
     for (let i = 0; i < 3; i++) {
       const wy = 16 + i * 5.0;
       const slant = 2.0 + i * 1.1;
       ctx.beginPath();
       ctx.moveTo(-34 + wShift, wy);
-      ctx.lineTo(-34 + wShift - leftLen, wy + slant);
+      ctx.quadraticCurveTo(-52 + wShift, wy - (isLonghair ? 4 : 0), -34 + wShift - leftLen, wy + slant * (isLonghair ? 2 : 1));
       ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(34 + wShift, wy);
-      ctx.lineTo(34 + wShift + rightLen, wy + slant);
+      ctx.quadraticCurveTo(52 + wShift, wy - (isLonghair ? 4 : 0), 34 + wShift + rightLen, wy + slant * (isLonghair ? 2 : 1));
       ctx.stroke();
     }
 
@@ -4821,14 +4884,14 @@ export class KuroCatEngine {
     const curious = Math.min(1, this.curiousAmount);
     const cross = this.crossAmount;
     const eyeXs = [cx - 23.0, cx + 23.0];
-    const rx = (14.8 + this.typingHunch * 1.0) * (1 + curious * 0.06);
-    const ry = (13.4 - this.typingHunch * 0.5) * (1 + curious * 0.09);
+    const rx = ((s.id === LONGHAIR_CAT_ID ? 16.5 : 14.8) + this.typingHunch * 1.0) * (1 + curious * 0.06);
+    const ry = ((s.id === LONGHAIR_CAT_ID ? 16.0 : 13.4) - this.typingHunch * 0.5) * (1 + curious * 0.09);
 
     for (let idx = 0; idx < 2; idx++) {
       ctx.save();
       ctx.translate(eyeXs[idx], eyeY);
 
-      if (this.privacyClose > 0.45 || this.sleepAmount > 0.52) {
+      if (s.id === LONGHAIR_CAT_ID ? closedness > 0.97 : this.privacyClose > 0.45 || this.sleepAmount > 0.52) {
         ctx.strokeStyle = s.squintColor;
         ctx.lineWidth = 2.9;
         ctx.lineCap = 'round';

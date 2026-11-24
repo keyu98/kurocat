@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "test:longhair": "node scripts/verify-longhair.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.2.7",
     "@types/three": "^0.187.0",
+    "playwright": "^1.55.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.7"
   }

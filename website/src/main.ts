@@ -1,3 +1,4 @@
+import { usesCanvasCat } from '../../src/longhairCoat';
 import {
   DEFAULT_TAIL_KEY_IDS,
   KuroCatEngine,
@@ -281,7 +282,7 @@ function initPlayground(): void {
   const wants3D = () =>
     Boolean(canvas3d) &&
     preferredRenderMode === '3d' &&
-    currentSkinId !== 'dafeiyu' &&
+    !usesCanvasCat(currentSkinId) &&
     !tailPickerOpen &&
     !webgl3dBlocked;
 
@@ -291,7 +292,7 @@ function initPlayground(): void {
     engine3d.setRenderStyle('3d');
     engine3d.setCatSkin(getActiveSkin());
     engine3d.setCollar(currentCollar);
-    engine3d.setHeadphones(headphonesOn && currentSkinId !== 'dafeiyu');
+    engine3d.setHeadphones(headphonesOn && !usesCanvasCat(currentSkinId));
     engine3d.setKeyboardConfig(currentLayout, currentOrient);
     engine3d.setTailKeyConfig(currentTailMode, currentTailKeyIds);
     engine3d.setPrivacyMode(engine.privacyMode);
@@ -300,11 +301,12 @@ function initPlayground(): void {
   const syncRenderEngine = () => {
     const use3d = wants3D();
     document.querySelectorAll<HTMLButtonElement>('[data-web-rendermode]').forEach((b) => {
-      b.classList.toggle('active', b.dataset.webRendermode === preferredRenderMode);
+      b.classList.toggle('active', b.dataset.webRendermode === (usesCanvasCat(currentSkinId) ? '2d' : preferredRenderMode));
+      b.disabled = usesCanvasCat(currentSkinId) && b.dataset.webRendermode !== '2d';
     });
     webCollarRow?.classList.toggle('hidden', !use3d);
     btnWebOrbit?.classList.toggle('hidden', !use3d);
-    btnWebHeadphones?.classList.toggle('hidden', currentSkinId === 'dafeiyu');
+    btnWebHeadphones?.classList.toggle('hidden', usesCanvasCat(currentSkinId));
     if (!use3d) {
       orbitMode = false;
       orbitDragging = false;
@@ -455,8 +457,8 @@ function initPlayground(): void {
   btnWebHeadphones?.addEventListener('click', () => {
     headphonesOn = !headphonesOn;
     btnWebHeadphones.classList.toggle('active', headphonesOn);
-    engine.setHeadphones(headphonesOn && currentSkinId !== 'dafeiyu');
-    engine3d?.setHeadphones(headphonesOn && currentSkinId !== 'dafeiyu');
+    engine.setHeadphones(headphonesOn && !usesCanvasCat(currentSkinId));
+    engine3d?.setHeadphones(headphonesOn && !usesCanvasCat(currentSkinId));
   });
 
   // 3D collar switcher
@@ -509,8 +511,8 @@ function initPlayground(): void {
       btn.addEventListener('click', () => {
         currentSkinId = skin.id;
         engine.setCatAppearance(skin.id, skin);
-        engine.setHeadphones(headphonesOn && skin.id !== 'dafeiyu');
-        if (skin.id !== 'dafeiyu') {
+        engine.setHeadphones(headphonesOn && !usesCanvasCat(skin.id));
+        if (!usesCanvasCat(skin.id)) {
           engine3d?.setCatSkin(skin);
           engine3d?.setHeadphones(headphonesOn);
         }
