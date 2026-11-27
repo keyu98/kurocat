@@ -365,7 +365,8 @@ pub fn set_windows_autostart(enabled: bool) -> Result<(), String> {
 pub fn set_windows_autostart(enabled: bool) -> Result<(), String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let agents_dir = PathBuf::from(home).join("Library").join("LaunchAgents");
-    let plist_path = agents_dir.join("com.kurocat.pet.plist");
+    let identifier = if FACAI_ONLY { "com.kurocat.facai" } else { "com.kurocat.pet" };
+    let plist_path = agents_dir.join(format!("{identifier}.plist"));
 
     if enabled {
         fs::create_dir_all(&agents_dir).map_err(|e| e.to_string())?;
@@ -379,7 +380,7 @@ pub fn set_windows_autostart(enabled: bool) -> Result<(), String> {
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.kurocat.pet</string>
+    <string>{identifier}</string>
     <key>ProgramArguments</key>
     <array>
         <string>{}</string>

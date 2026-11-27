@@ -1,0 +1,62 @@
+name: Build Facai for macOS
+
+on:
+  push:
+    branches: [codex/facai-macos]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      CARGO_PROFILE_RELEASE_LTO: 'false'
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - run: npm ci
+
+      - name: Build Universal app
+        run: npm run tauri:build:facai:macos
+
+      - name: Sign, package and verify the DMG
+        run: |
+          set -euo pipefail
+          app="src-tauri/target/universal-apple-darwin/release/bundle/macos/发财.app"
+          plist="$app/Contents/Info.plist"
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = 'com.kurocat.facai'
+          lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/$executable"
+          scripts/macos-codesign.sh sign "$app"
+          requirement="$(scripts/macos-codesign.sh requirement "$app")"
+
+          staging="$(mktemp -d)"
+          ditto "$app" "$staging/发财.app"
+          ln -s /Applications "$staging/Applications"
+          mkdir -p artifacts
+          dmg='artifacts/Facai-macOS-universal.dmg'
+          hdiutil create -volname '发财' -srcfolder "$staging" -format UDZO "$dmg"
+          scripts/macos-codesign.sh verify-artifact "$dmg" "$requirement"
+          shasum -a 256 "$dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Facai-macOS-universal
+          path: artifacts/Facai-macOS-universal.dmg
+          if-no-files-found: error
+          retention-days: 7
