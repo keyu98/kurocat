@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [features]
 default = []
+facai-only = []
 layout-108 = []
 win7 = ["tauri/custom-protocol"]
 

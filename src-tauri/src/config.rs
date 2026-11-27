@@ -3,12 +3,16 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-fn default_cat_breed() -> String {
-    "black".to_string()
+pub(crate) const FACAI_ONLY: bool = cfg!(feature = "facai-only");
+pub(crate) const APP_NAME: &str = if FACAI_ONLY { "发财" } else { "KuroCat" };
+const APP_DATA_FOLDER: &str = if FACAI_ONLY { "kuro-cat-facai" } else { "kuro-cat-pet" };
+
+pub(crate) fn default_cat_breed() -> String {
+    if FACAI_ONLY { "orange-white-longhair" } else { "black" }.to_string()
 }
 
 fn default_mcp_enabled() -> bool {
-    true
+    !FACAI_ONLY
 }
 
 fn default_privacy_password_guard() -> bool {
@@ -224,7 +228,7 @@ pub fn app_data_dir() -> PathBuf {
         let base = std::env::var("APPDATA")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("."));
-        base.join("kuro-cat-pet")
+        base.join(APP_DATA_FOLDER)
     }
     #[cfg(target_os = "macos")]
     {
@@ -233,14 +237,14 @@ pub fn app_data_dir() -> PathBuf {
             .unwrap_or_else(|_| PathBuf::from("."));
         home.join("Library")
             .join("Application Support")
-            .join("kuro-cat-pet")
+            .join(APP_DATA_FOLDER)
     }
     #[cfg(all(not(windows), not(target_os = "macos")))]
     {
         let home = std::env::var("HOME")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("."));
-        home.join(".config").join("kuro-cat-pet")
+        home.join(".config").join(APP_DATA_FOLDER)
     }
 }
 
@@ -252,6 +256,10 @@ pub fn load_settings() -> AppSettings {
     let path = config_path();
     if let Ok(content) = fs::read_to_string(&path) {
         if let Ok(mut parsed) = serde_json::from_str::<AppSettings>(&content) {
+            if FACAI_ONLY {
+                parsed.cat_breed = default_cat_breed();
+                parsed.mcp_enabled = false;
+            }
             parsed.scale = parsed.scale.clamp(0.20, 1.50);
             parsed.tail_key_mode = normalize_tail_key_mode(&parsed.tail_key_mode);
             parsed.tail_key_ids = normalize_tail_key_ids(&parsed.tail_key_ids);
@@ -301,7 +309,7 @@ pub fn set_windows_autostart(enabled: bool) -> Result<(), String> {
     }
 
     let subkey = to_wide("Software\\Microsoft\\Windows\\CurrentVersion\\Run");
-    let value_name = to_wide("KuroCat");
+    let value_name = to_wide(if FACAI_ONLY { "KuroCatFacai" } else { "KuroCat" });
     let legacy_value_name = to_wide("KuroCatPet");
 
     unsafe {
@@ -318,7 +326,9 @@ pub fn set_windows_autostart(enabled: bool) -> Result<(), String> {
         }
 
         // Clean up legacy autostart key so users upgrading from <=v4.2 never run two copies
-        let _ = RegDeleteValueW(hkey, legacy_value_name.as_ptr());
+        if !FACAI_ONLY {
+            let _ = RegDeleteValueW(hkey, legacy_value_name.as_ptr());
+        }
 
         let result = if enabled {
             let exe = std::env::current_exe()
@@ -445,17 +455,19 @@ pub fn create_desktop_shortcut() -> Result<String, String> {
 
     let script = format!(
         "$desktop = [Environment]::GetFolderPath('Desktop'); \
-         $lnk = Join-Path $desktop 'KuroCat.lnk'; \
+         $lnk = Join-Path $desktop '{shortcut}'; \
          $ws = New-Object -ComObject WScript.Shell; \
          $s = $ws.CreateShortcut($lnk); \
          $s.TargetPath = '{exe}'; \
          $s.WorkingDirectory = '{wd}'; \
          $s.IconLocation = '{exe},0'; \
-         $s.Description = 'KuroCat Desktop Companion'; \
+         $s.Description = '{name}'; \
          $s.Save(); \
          Write-Output $lnk",
         exe = exe_str,
         wd = work_dir,
+        shortcut = if FACAI_ONLY { "Facai.lnk" } else { "KuroCat.lnk" },
+        name = if FACAI_ONLY { "发财桌面宠物" } else { "KuroCat Desktop Companion" },
     );
 
     let output = Command::new("powershell.exe")

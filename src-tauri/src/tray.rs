@@ -1,4 +1,4 @@
-use crate::config::AppSettings;
+use crate::config::{AppSettings, APP_NAME, FACAI_ONLY};
 use crate::{
     apply_breed_and_save, apply_keyboard_layout_and_save, apply_keyboard_orientation_and_save,
     apply_scale_and_save, apply_tail_key_mode_and_save, is_pet_visible, reset_window_position,
@@ -10,6 +10,9 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Listener, Manager};
 
 fn default_tray_tooltip() -> &'static str {
+    if FACAI_ONLY {
+        return APP_NAME;
+    }
     #[cfg(windows)]
     {
         if crate::win_is_elevated() {
@@ -24,7 +27,13 @@ pub fn setup_tray(app: &AppHandle, initial: &AppSettings) -> tauri::Result<()> {
     let display_menu = crate::windows_display::create_menu(app)?;
     #[cfg(target_os = "macos")]
     let display_menu = crate::macos_window::create_display_menu(app)?;
-    let toggle_show = MenuItem::with_id(app, "toggle_show", "显示 / 隐藏小黑猫", true, None::<&str>)?;
+    let toggle_show = MenuItem::with_id(
+        app,
+        "toggle_show",
+        if FACAI_ONLY { "显示 / 隐藏发财" } else { "显示 / 隐藏小黑猫" },
+        true,
+        None::<&str>,
+    )?;
     let pause_guard = CheckMenuItem::with_id(
         app,
         "pause_guard",
@@ -206,7 +215,7 @@ pub fn setup_tray(app: &AppHandle, initial: &AppSettings) -> tauri::Result<()> {
     let reset_pos = MenuItem::with_id(app, "reset_pos", "重置位置到右下角", true, None::<&str>)?;
     #[cfg(windows)]
     let desktop_shortcut =
-        MenuItem::with_id(app, "desktop_shortcut", "创建桌面快捷方式 (KuroCat)", true, None::<&str>)?;
+        MenuItem::with_id(app, "desktop_shortcut", format!("创建桌面快捷方式 ({APP_NAME})"), true, None::<&str>)?;
     #[cfg(target_os = "macos")]
     let mac_input_menu = {
         let mac_reconnect = MenuItem::with_id(
@@ -251,6 +260,7 @@ pub fn setup_tray(app: &AppHandle, initial: &AppSettings) -> tauri::Result<()> {
             ],
         )?
     };
+    #[cfg(not(feature = "facai-only"))]
     let check_update = MenuItem::with_id(
         app,
         "check_update",
@@ -258,7 +268,7 @@ pub fn setup_tray(app: &AppHandle, initial: &AppSettings) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?;
-    let quit = MenuItem::with_id(app, "quit", "退出 KuroCat", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", format!("退出 {APP_NAME}"), true, None::<&str>)?;
 
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
@@ -285,7 +295,9 @@ pub fn setup_tray(app: &AppHandle, initial: &AppSettings) -> tauri::Result<()> {
             &reset_pos,
             &autostart,
             &obs_menu,
+            #[cfg(not(feature = "facai-only"))]
             &mcp_toggle,
+            #[cfg(not(feature = "facai-only"))]
             &check_update,
             &sep2,
             &quit,
@@ -313,7 +325,9 @@ pub fn setup_tray(app: &AppHandle, initial: &AppSettings) -> tauri::Result<()> {
             &reset_pos,
             &autostart,
             &obs_menu,
+            #[cfg(not(feature = "facai-only"))]
             &mcp_toggle,
+            #[cfg(not(feature = "facai-only"))]
             &check_update,
             &sep2,
             &quit,
@@ -339,13 +353,18 @@ pub fn setup_tray(app: &AppHandle, initial: &AppSettings) -> tauri::Result<()> {
             &reset_pos,
             &autostart,
             &obs_menu,
+            #[cfg(not(feature = "facai-only"))]
             &mcp_toggle,
+            #[cfg(not(feature = "facai-only"))]
             &check_update,
             &sep2,
             &quit,
         ],
     )?;
 
+    #[cfg(feature = "facai-only")]
+    let icon = Image::from_bytes(include_bytes!("../icons/facai-tray.png"))?;
+    #[cfg(not(feature = "facai-only"))]
     let icon = Image::from_bytes(include_bytes!("../icons/tray-icon.png"))?;
     let pause_guard_for_click = pause_guard.clone();
 

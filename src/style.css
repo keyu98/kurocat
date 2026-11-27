@@ -929,3 +929,9 @@ html.win7-ulw-mode .floating-side-menu {
 .footer-btn.danger:hover {
   background: rgba(255, 92, 92, 0.18);
 }
+.facai-only .cat-picker-label,
+.facai-only [data-action="toggle-mcp"],
+.facai-only [data-action="copy-mcp"],
+.facai-only [data-action="check-update"] {
+  display: none;
+}

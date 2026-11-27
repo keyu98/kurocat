@@ -2,7 +2,7 @@ import './style.css';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { DEFAULT_TAIL_KEY_IDS, type KeyboardOrientation, type TailKeyMode } from './catEngine';
-import { DEFAULT_BUILTIN_CATS, type CatSkinConfig } from './catSkins';
+import { DEFAULT_BUILTIN_CATS, DEFAULT_CAT_ID, FACAI_ONLY, type CatSkinConfig } from './catSkins';
 import type { KeyboardLayoutId } from './keyboardLayout';
 
 interface AppSettings {
@@ -70,8 +70,8 @@ let settings: AppSettings = {
   showKeyBubbles: true,
   soundEnabled: true,
   autostart: false,
-  catBreed: 'black',
-  mcpEnabled: true,
+  catBreed: DEFAULT_CAT_ID,
+  mcpEnabled: !FACAI_ONLY,
   mcpPort: 27420,
   keyboardLayout: '65',
   keyboardOrientation: 'cat',
@@ -395,6 +395,10 @@ async function triggerManualUpdateCheck(): Promise<void> {
 }
 
 async function bootstrap(): Promise<void> {
+  if (FACAI_ONLY) {
+    document.documentElement.classList.add('facai-only');
+    document.title = '发财';
+  }
   if (isMacPlatform()) {
     const shortcutBtn = document.getElementById('btn-desktop-shortcut');
     if (shortcutBtn) shortcutBtn.classList.add('hidden');

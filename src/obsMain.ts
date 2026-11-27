@@ -5,7 +5,7 @@ import {
   type TailKeyMode,
 } from './catEngine';
 import { catAudio } from './audio';
-import { DEFAULT_BUILTIN_CATS, type CatSkinConfig } from './catSkins';
+import { DEFAULT_BUILTIN_CATS, DEFAULT_CAT_ID, type CatSkinConfig } from './catSkins';
 import type { KeyboardLayoutId } from './keyboardLayout';
 import type { CollarColorId, KuroCatEngine3D } from './catEngine3d';
 
@@ -92,7 +92,7 @@ let catList: CatSkinConfig[] = [...DEFAULT_BUILTIN_CATS];
 let currentSettings: ObsAppSettings = {
   scale: 1,
   showKeyBubbles: true,
-  catBreed: 'black',
+  catBreed: DEFAULT_CAT_ID,
   keyboardLayout: '65',
   keyboardOrientation: 'cat',
   tailKeyMode: 'smart',

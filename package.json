@@ -8,10 +8,12 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "build:web": "vite build --config vite.web.config.ts",
+    "build:facai": "tsc && vite build --mode facai --outDir dist-facai",
     "build:android-web": "vite build --config vite.android.config.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
+    "tauri:build:facai": "tauri build --config src-tauri/tauri.facai.json --features facai-only --target x86_64-pc-windows-msvc --no-bundle --no-sign",
     "tauri:build": "tauri build"
   },
   "dependencies": {

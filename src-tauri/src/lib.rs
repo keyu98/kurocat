@@ -322,8 +322,11 @@ fn update_settings(app: AppHandle, state: State<'_, AppState>, mut patch: AppSet
     patch.cat_breed = if cat_exists(&clean_breed) {
         clean_breed
     } else {
-        "black".to_string()
+        config::default_cat_breed()
     };
+    if config::FACAI_ONLY {
+        patch.mcp_enabled = false;
+    }
     if patch.mcp_port == 0 {
         patch.mcp_port = 27420;
     }
@@ -847,11 +850,18 @@ fn get_app_version() -> String {
 
 #[tauri::command]
 fn get_cached_update_info() -> Option<updater::UpdateInfo> {
-    updater::get_cached_update_info()
+    if config::FACAI_ONLY {
+        None
+    } else {
+        updater::get_cached_update_info()
+    }
 }
 
 #[tauri::command]
 async fn check_for_update() -> Result<updater::UpdateInfo, String> {
+    if config::FACAI_ONLY {
+        return Err("发财专版独立更新".to_string());
+    }
     tauri::async_runtime::spawn_blocking(updater::check_latest_update)
         .await
         .map_err(|e| format!("检查更新任务异常: {}", e))?
@@ -859,6 +869,9 @@ async fn check_for_update() -> Result<updater::UpdateInfo, String> {
 
 #[tauri::command]
 async fn install_update(app: AppHandle, info: updater::UpdateInfo) -> Result<(), String> {
+    if config::FACAI_ONLY {
+        return Err("发财专版独立更新".to_string());
+    }
     tauri::async_runtime::spawn_blocking(move || updater::perform_update_install(&app, info))
         .await
         .map_err(|e| format!("安装更新任务异常: {}", e))?
@@ -951,7 +964,7 @@ pub fn apply_breed_and_save(app: &AppHandle, breed: &str) {
     let normalized = if cat_exists(&clean) {
         clean
     } else {
-        "black".to_string()
+        config::default_cat_breed()
     };
     let state = app.state::<AppState>();
     let updated = {
@@ -2389,13 +2402,14 @@ pub fn run() {
                 paused_for_setup,
             );
             start_storage_watcher(handle.clone());
-            updater::start_background_update_checker(handle.clone());
-
-            let http_handle = handle.clone();
-            let mcp_port = if s.mcp_port == 0 { 27420 } else { s.mcp_port };
-            mcp::start_http_mcp_server(mcp_port, mcp_for_setup, move || {
-                reload_and_emit_all(&http_handle);
-            });
+            if !config::FACAI_ONLY {
+                updater::start_background_update_checker(handle.clone());
+                let http_handle = handle.clone();
+                let mcp_port = if s.mcp_port == 0 { 27420 } else { s.mcp_port };
+                mcp::start_http_mcp_server(mcp_port, mcp_for_setup, move || {
+                    reload_and_emit_all(&http_handle);
+                });
+            }
 
             // Forward settings / cats / privacy broadcasts to OBS SSE clients (1ns no-op when OBS is off)
             handle.listen("kuro-settings", |ev| {

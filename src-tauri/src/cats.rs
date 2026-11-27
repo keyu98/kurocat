@@ -154,6 +154,11 @@ pub fn sanitize_cat_id(raw: &str) -> String {
 }
 
 pub fn builtin_cats() -> Vec<CatSkinConfig> {
+    let facai = serde_json::from_str(include_str!("../../src/assets/orange-white-longhair/skin.json"))
+        .expect("valid built-in orange-white longhair skin");
+    if crate::config::FACAI_ONLY {
+        return vec![facai];
+    }
     vec![
         CatSkinConfig {
             id: "black".to_string(),
@@ -456,10 +461,14 @@ pub fn builtin_cats() -> Vec<CatSkinConfig> {
             accent_side_color: Some("#2563eb".to_string()),
             spots: vec![],
         },
+        facai,
     ]
 }
 
 pub fn load_custom_cats() -> Vec<CatSkinConfig> {
+    if crate::config::FACAI_ONLY {
+        return vec![];
+    }
     let path = cats_path();
     if let Ok(content) = fs::read_to_string(&path) {
         if let Ok(mut parsed) = serde_json::from_str::<Vec<CatSkinConfig>>(&content) {
@@ -499,6 +508,9 @@ pub fn all_cats() -> Vec<CatSkinConfig> {
 }
 
 pub fn upsert_custom_cat(mut cat: CatSkinConfig) -> Result<CatSkinConfig, String> {
+    if crate::config::FACAI_ONLY {
+        return Err("发财专版只使用内置皮肤".to_string());
+    }
     cat.id = sanitize_cat_id(&cat.id);
     if cat.name.trim().is_empty() {
         cat.name = cat.id.clone();

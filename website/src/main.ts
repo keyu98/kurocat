@@ -486,7 +486,7 @@ function initPlayground(): void {
     }
   });
 
-  // Build 7 skin buttons (re-labeled automatically when switching language)
+  // Skin buttons are re-labeled automatically when switching language.
   const skinHost = document.getElementById('skin-pills');
   const syncSkinLabels = () => {
     if (!skinHost) return;

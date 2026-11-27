@@ -1,4 +1,4 @@
-import type { CatSkinConfig } from '../../src/catSkins';
+import { ORANGE_WHITE_LONGHAIR, type CatSkinConfig } from '../../src/catSkins';
 
 export const BUILTIN_WEB_CATS: CatSkinConfig[] = [
   {
@@ -231,4 +231,5 @@ export const BUILTIN_WEB_CATS: CatSkinConfig[] = [
     accentSideColor: '#2563eb',
     spots: [],
   },
+  ORANGE_WHITE_LONGHAIR,
 ];

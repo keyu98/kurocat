@@ -1,0 +1,14 @@
+{
+  "productName": "发财",
+  "mainBinaryName": "Facai",
+  "identifier": "com.kurocat.facai",
+  "build": {
+    "beforeBuildCommand": "npm run build:facai",
+    "frontendDist": "../dist-facai"
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/facai.ico"],
+    "shortDescription": "发财桌面宠物"
+  }
+}

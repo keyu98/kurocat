@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { CatSkinConfig } from './catSkins';
+import { ORANGE_WHITE_LONGHAIR, type CatSkinConfig } from './catSkins';
+import { LonghairModel3D } from './longhair3d';
 import type { KeyboardLayoutId } from './keyboardLayout';
 import type { KeyboardOrientation, TailKeyMode } from './catEngine';
 import { DEFAULT_TAIL_KEY_IDS } from './catEngine';
@@ -36,6 +37,15 @@ const EYE_MAX_RY = 0.160;
 const Z_SCALE = 0.82;
 const BODY_H = 1.98;
 const HEAD_CY = 1.56;
+
+const LONGHAIR_TAIL_REST = [
+  new THREE.Vector3(0.46, 0.28, -0.25),
+  new THREE.Vector3(0.87, 0.23, -0.34),
+  new THREE.Vector3(1.14, 0.33, -0.47),
+  new THREE.Vector3(1.26, 0.52, -0.55),
+  new THREE.Vector3(1.15, 0.71, -0.54),
+  new THREE.Vector3(0.88, 0.75, -0.48),
+];
 
 interface PawTrack3D {
   side: -1 | 1;
@@ -79,8 +89,7 @@ interface IdleAct3D {
 }
 
 interface SimpleLimb3D {
-  fill: TaperTube3D;
-  caps: THREE.Mesh[];
+  setVisible(visible: boolean): void;
   update(point: (t: number, out: THREE.Vector3) => void, radius: (t: number) => number): void;
 }
 
@@ -114,8 +123,10 @@ function createCleanLimb(
   const tmp = new THREE.Vector3();
 
   return {
-    fill,
-    caps,
+    setVisible(visible) {
+      fill.mesh.visible = visible;
+      for (const cap of caps) cap.visible = visible;
+    },
     update(point, radius) {
       fill.update(point, radius);
       capTs.forEach((t, idx) => {
@@ -514,6 +525,8 @@ export class KuroCatEngine3D {
   private readonly bodyGeo: THREE.LatheGeometry;
   private readonly bodyMesh: THREE.Mesh;
   private readonly outlineSamplePts: THREE.Vector3[];
+  private longhairModel: LonghairModel3D | null = null;
+  private longhairActive = false;
 
   // Head mount tracks exact head pivot inside the continuous one-piece body mesh
   private readonly headMount = new THREE.Group();
@@ -539,9 +552,11 @@ export class KuroCatEngine3D {
     blush: THREE.Mesh;
   }> = [];
   private readonly faceGroup = new THREE.Group();
+  private readonly whiskers: THREE.Mesh;
 
   // Shared materials updated on skin switch
   private readonly pawMat: THREE.ShaderMaterial;
+  private readonly hindPaws: THREE.Mesh[] = [];
   private readonly toeMat = new THREE.MeshBasicMaterial({ color: '#343640', depthTest: true });
   private readonly lidArcMat = new THREE.MeshBasicMaterial({
     color: '#d4f044',
@@ -610,6 +625,7 @@ export class KuroCatEngine3D {
   }> = [];
   private readonly tailLimb: SimpleLimb3D;
   private readonly tailCurve: THREE.CatmullRomCurve3;
+  private longhairTail: SimpleLimb3D | null = null;
   // Sleek graceful KuroCat tail curving smoothly out to the right & gently curling up at tip
   private readonly tailRestPts = [
     new THREE.Vector3(0.56, 0.24, -0.14),
@@ -846,6 +862,7 @@ export class KuroCatEngine3D {
       hp.position.set(s * 0.56, 0.065, 0.34);
       hp.rotation.y = s * 0.24;
       this.catRoot.add(hp);
+      this.hindPaws.push(hp);
     }
 
     // 3) Optional 3D Collar + Swinging Gold Bell (off by default to stay 100% pure original KuroCat!)
@@ -1011,9 +1028,9 @@ export class KuroCatEngine3D {
       }
       const mergedWhiskers = mergeStaticGeometries(whiskerGeos);
       for (const w of whiskerGeos) w.geo.dispose();
-      const whiskerMesh = new THREE.Mesh(mergedWhiskers, this.whiskerMat);
-      whiskerMesh.renderOrder = 12;
-      this.headMount.add(whiskerMesh);
+      this.whiskers = new THREE.Mesh(mergedWhiskers, this.whiskerMat);
+      this.whiskers.renderOrder = 12;
+      this.headMount.add(this.whiskers);
     }
 
     // 8) Delicate 3D Nose & "ω" Mouth (shown on Ragdoll / Tabby / Calico / Tuxedo / Siamese; hidden on pure Black Cat!)
@@ -1406,15 +1423,16 @@ export class KuroCatEngine3D {
     this.headMount.rotation.set(this.headRot.pitch, this.headRot.yaw, this.headRot.roll, 'YXZ');
 
     if (!this.collarGroup.visible) return;
-    const y = this.collarY - 0.18 * clamp(this.headRot.pitch + 0.06, 0, 0.45);
-    const s = this.radiusAtY(y) / Math.max(0.05, this.collarR);
+    const collarBase = this.longhairActive ? 1.16 - this.sleepAmt * 0.13 : this.collarY;
+    const y = collarBase - 0.18 * clamp(this.headRot.pitch + 0.06, 0, 0.45);
+    const s = this.longhairActive ? 0.86 : this.radiusAtY(y) / Math.max(0.05, this.collarR);
     this.collarGroup.scale.set(s, 1, s);
     const w = this.spineWeight(y);
     const dw = (this.spineWeight(y + 0.01) - this.spineWeight(y - 0.01)) / 0.02;
     this.collarGroup.position.set(
       this.bend.x * w,
       y * (1 - this.bend.squash * this.sinkWeight(y)),
-      this.bend.z * w,
+      this.bend.z * w + (this.longhairActive ? 0.065 + this.sleepAmt * 0.038 : 0),
     );
     const tx = clamp(Math.atan(this.bend.z * dw) * 0.45, -0.16, 0.16);
     const tz = clamp(-Math.atan(this.bend.x * dw) * 0.45, -0.16, 0.16);
@@ -1532,6 +1550,44 @@ export class KuroCatEngine3D {
   public setCatSkin(skin: CatSkinConfig): void {
     this.currentSkin = skin;
     const p = resolveFurPalette3D(skin, this.renderStyle);
+    this.longhairActive = skin.id === ORANGE_WHITE_LONGHAIR.id;
+    if (this.longhairActive) {
+      if (!this.longhairModel) {
+        const model = new LonghairModel3D((height) => this.radiusAtY(height), Z_SCALE, HEAD_CY, this.ears[0].mesh.geometry);
+        this.catRoot.add(model.body);
+        this.headMount.add(model.head);
+        this.ears.forEach((ear, i) => ear.group.add(model.ears[i]));
+        this.scene.add(...model.forelegs.map((foreleg) => foreleg.mesh));
+        this.longhairTail = createCleanLimb(this.scene, {
+          segments: 38,
+          radial: 16,
+          fill: model.tailMaterial,
+          capStart: false,
+        });
+        this.longhairModel = model;
+      }
+      this.longhairModel.setSkin(skin);
+      p.accentRight = p.accent;
+    }
+    if (this.longhairModel) {
+      this.longhairModel.body.visible = this.longhairActive;
+      this.longhairModel.head.visible = this.longhairActive;
+      for (const ear of this.longhairModel.ears) ear.visible = this.longhairActive;
+      for (const foreleg of this.longhairModel.forelegs) foreleg.mesh.visible = this.longhairActive;
+    }
+    for (const arm of this.arms) {
+      arm.paw.visible = !this.longhairActive;
+      arm.limb.setVisible(!this.longhairActive);
+    }
+    this.bodyMesh.visible = !this.longhairActive;
+    this.whiskers.visible = !this.longhairActive;
+    if (!this.longhairActive) this.headMount.scale.setScalar(1);
+    for (const ear of this.ears) ear.mesh.visible = !this.longhairActive;
+    for (const paw of this.hindPaws) {
+      paw.material = this.longhairActive && this.longhairModel ? this.longhairModel.limbMaterial : this.pawMat;
+    }
+    this.tailLimb.setVisible(!this.longhairActive);
+    this.longhairTail?.setVisible(this.longhairActive);
     this.currentPalette = p;
     this.furSystem.applyPalette(p, skin.spots || []);
     this.desk.setAccentColors(p.accent, p.accentRight);
@@ -1545,7 +1601,7 @@ export class KuroCatEngine3D {
     this.tuckLineMat.color.set(p.isDarkFur ? '#b2b8c4' : '#7b6e64');
     this.tuckLineMat.opacity = p.isDarkFur ? 0.36 : 0.24;
 
-    this.faceGroup.visible = Boolean(p.nose);
+    this.faceGroup.visible = !this.longhairActive && Boolean(p.nose);
     if (p.nose) this.noseMat.color.set(p.nose);
     if (p.mouth) this.mouthMat.color.set(p.mouth);
 
@@ -1558,6 +1614,7 @@ export class KuroCatEngine3D {
       e.mat.uniforms.uIs3D.value = this.renderStyle === '3d' ? 1.0 : 0.0;
       e.mat.uniforms.uLimbalAmt.value = p.isDarkFur ? 0.22 : 0.56;
     }
+    this.wakeRendering();
   }
 
   public setRenderStyle(style: RenderStyle3D): void {
@@ -1873,7 +1930,8 @@ export class KuroCatEngine3D {
     let overHead = false;
     if (insideCanvas && allowPetting && !this.leftMouseDown && !this.rightMouseDown) {
       this.raycaster.setFromCamera(this.cursorNdc, this.camera);
-      const hits = this.raycaster.intersectObjects(this.petMeshes, false);
+      const targets = this.longhairActive && this.longhairModel ? this.longhairModel.hitMeshes : this.petMeshes;
+      const hits = this.raycaster.intersectObjects(targets, false);
       overHead = hits.length > 0 && hits[0].point.y >= 1.15;
       if (overHead) {
         this.petting = true;
@@ -2025,6 +2083,7 @@ export class KuroCatEngine3D {
   private update(dt: number): void {
     this.elapsed += dt;
     const t = this.elapsed;
+    const longhair = this.longhairActive ? this.longhairModel : null;
 
     // 1) Camera smooth 360° turntable framing (skip redundant lookAt matrix rebuild when static)
     const az = (this.sOrbitAz.step(this.orbitAzimuthTarget, dt) * Math.PI) / 180;
@@ -2227,8 +2286,9 @@ export class KuroCatEngine3D {
     this.headRot.roll = this.sRoll.step(targetRoll, dt) + wakeShake;
 
     // Deform one-piece body+head smoothly & sync headMount + optional collar!
-    this.deformCatBody();
     this.placeHeadAndCollar();
+    if (longhair) longhair.deform(this.headMount, this.bend, this.sleepAmt);
+    else this.deformCatBody();
 
     // 5b) Smooth drop-on gaming headset animation + reactive KuroCat-lime/cyan RGB earcup glow!
     const hsVal = clamp(this.sHeadset.step(this.headsetOn ? 1 : 0, dt), 0, 1.18);
@@ -2238,7 +2298,7 @@ export class KuroCatEngine3D {
       const dropOffset = (1 - settled) * 0.42;
       const sc = mix(0.84, 1.0, settled) + Math.max(0, hsVal - 1) * 0.14;
       this.headsetGroup.position.set(0, dropOffset, 0);
-      this.headsetGroup.scale.setScalar(sc);
+      this.headsetGroup.scale.set(sc * (longhair ? 1.16 : 1), sc * (longhair ? 1.20 : 1), sc);
       const rgbMix = 0.5 + 0.5 * Math.sin(t * 2.3 + this.excite * 2.0);
       // Smoothly breathe between KuroCat neon-lime (#d4f53d) and electric gaming cyan (#3df2e8)
       const pulse = 0.88 + 0.12 * Math.sin(t * 5.2) + this.excite * 0.16;
@@ -2269,7 +2329,11 @@ export class KuroCatEngine3D {
       const airplaneFold = cross * 0.56;
       e.group.rotation.z = -e.s * (e.tilt + airplaneFold - earState * 0.28 + flick);
       e.group.rotation.x = -0.06 - cross * 0.14 + curious * 0.10;
-      e.group.position.set(e.s * (0.295 + cross * 0.06), 0.255 - cross * 0.045, -0.015);
+      e.group.position.set(
+        e.s * ((longhair ? 0.365 : 0.295) + cross * 0.06),
+        (longhair ? 0.38 : 0.255) - cross * 0.045,
+        longhair ? -0.065 : -0.015,
+      );
     }
 
     // 7) Iconic KuroCat Eyes: open / curious / grumpy zero-seam / petting lazy slits / sleep arcs
@@ -2298,13 +2362,18 @@ export class KuroCatEngine3D {
     // Match original KuroCat 2D: Black Cat shows NO permanent catchlights when calm, sparkling catchlights when Curious!
     const shineAmt = pal?.eyeCatchlight ? 1.0 + curious * 0.20 : Math.min(1.16, curious * 1.25);
 
+    longhair?.pose(
+      isSleepOrPrivacy || isBlinkClosed ? 0 : isPetSquint ? 0.10 : 1 - blinkClose,
+      gazeX,
+      gazeY,
+    );
     for (const e of this.eyes) {
-      e.blush.visible = showBlush;
-      e.mesh.visible = showOpenEye;
-      e.closedArc.visible = isSleepOrPrivacy || isBlinkClosed;
-      e.squintSlit.visible = isPetSquint;
+      e.blush.visible = !longhair && showBlush;
+      e.mesh.visible = !longhair && showOpenEye;
+      e.closedArc.visible = !longhair && (isSleepOrPrivacy || isBlinkClosed);
+      e.squintSlit.visible = !longhair && isPetSquint;
 
-      if (showOpenEye) {
+      if (e.mesh.visible) {
         const irisRx = 0.156 * (1 + curious * 0.06);
         const irisRy = Math.max(0.02, 0.136 * (1 + curious * 0.09) * (1 - blinkClose * 0.8));
 
@@ -2359,9 +2428,10 @@ export class KuroCatEngine3D {
     const loose = this.tmpTailLoose;
     const tmpTail = this.tmpTailScratch;
     this.catRoot.updateMatrixWorld(false);
-    for (let i = 0; i < this.tailRestPts.length; i++) {
-      const w = i / (this.tailRestPts.length - 1);
-      const pt = this.tailCurve.points[i].lerpVectors(this.tailRestPts[i], this.tailSleepPts[i], this.sleepAmt);
+    const tailRest = longhair ? LONGHAIR_TAIL_REST : this.tailRestPts;
+    for (let i = 0; i < tailRest.length; i++) {
+      const w = i / (tailRest.length - 1);
+      const pt = this.tailCurve.points[i].lerpVectors(tailRest[i], this.tailSleepPts[i], this.sleepAmt);
       if (cross > 0.01) {
         tmpTail.copy(this.tailThumpPts[i]);
         tmpTail.y += this.thumpLift * 1.02 * w ** 1.4;
@@ -2395,10 +2465,17 @@ export class KuroCatEngine3D {
     const tailHoverTarget = this.tailTap.down ? 0 : 0.095;
     this.tailTap.hover += (tailHoverTarget - this.tailTap.hover) * approach(34, dt);
 
-    this.tailLimb.update(
-      (u, out) => this.tailCurve.getPoint(u, out),
-      (u) => mix(0.068, 0.044, u) * (1 - 0.12 * Math.sin(u * Math.PI)),
-    );
+    const tailPath = (u: number, out: THREE.Vector3) => this.tailCurve.getPoint(u, out);
+    const slender = (u: number) => mix(0.068, 0.044, u) * (1 - 0.12 * Math.sin(u * Math.PI));
+    if (longhair && this.longhairTail) {
+      this.longhairTail.update(tailPath, (u) => {
+        const wave = 1 + 0.027 * Math.sin(34 * u) * Math.sin(Math.PI * u);
+        const plume = 0.106 + 0.086 * Math.sin(Math.PI * u) ** 1.45;
+        return mix(plume * wave, slender(u), this.tailTap.reach * smoothstep(0.46, 1, u));
+      });
+    } else {
+      this.tailLimb.update(tailPath, slender);
+    }
 
     // 9) Sleek Unified KuroCat Arms + Cozy Tucked Idle Belly Paws!
     const updatePaw = (paw: PawTrack3D, isLeft: boolean) => {
@@ -2407,7 +2484,11 @@ export class KuroCatEngine3D {
       const wantTuck = !activeForMouse && !activeForKey ? 1 : 0;
       paw.tuckWeight += (wantTuck - paw.tuckWeight) * approach(wantTuck ? 6.5 : 22, dt);
 
-      this.tmpPawLocal.set(paw.side * 0.24, 0.16 - this.sleepAmt * 0.06, 0.54);
+      if (longhair) {
+        this.tmpPawLocal.set(paw.side * 0.18, 0.14 - this.sleepAmt * 0.04, 0.725);
+      } else {
+        this.tmpPawLocal.set(paw.side * 0.24, 0.16 - this.sleepAmt * 0.06, 0.54);
+      }
       const tuckHome = this.attachLocal(this.tmpPawLocal, this.tmpV3);
 
       if (activeForMouse) {
@@ -2441,10 +2522,13 @@ export class KuroCatEngine3D {
 
     for (const arm of this.arms) {
       const pawTrack = arm.s < 0 ? this.paws.L : this.paws.R;
-      this.attachLocal(arm.shoulderLocal, arm.shoulder);
+      const tuck = pawTrack.tuckWeight;
+      const shoulderLocal = longhair
+        ? this.tmpV1.set(arm.s * mix(0.37, 0.22, tuck), mix(0.78, 0.74, tuck), mix(0.29, 0.48, tuck))
+        : arm.shoulderLocal;
+      this.attachLocal(shoulderLocal, arm.shoulder);
       arm.hand.copy(pawTrack.pos);
 
-      const tuck = pawTrack.tuckWeight;
       const onMouse = arm.s < 0 && mousing;
       const reach = arm.shoulder.distanceTo(arm.hand);
       const lift = mix(0.24, 0.06, clamp((reach - 0.85) / 0.85, 0, 1)) * (1 - tuck * 0.65);
@@ -2463,17 +2547,36 @@ export class KuroCatEngine3D {
       );
       arm.c2.copy(arm.shoulder).lerp(arm.hand, 0.72).add(this.tmpArmOff);
 
+      const traceArm = (u: number, out: THREE.Vector3) => {
+        const m = 1 - u;
+        const m2 = m * m;
+        const u2 = u * u;
+        out.set(
+          m2 * m * arm.shoulder.x + 3 * m2 * u * arm.c1.x + 3 * m * u2 * arm.c2.x + u2 * u * arm.hand.x,
+          m2 * m * arm.shoulder.y + 3 * m2 * u * arm.c1.y + 3 * m * u2 * arm.c2.y + u2 * u * arm.hand.y,
+          m2 * m * arm.shoulder.z + 3 * m2 * u * arm.c1.z + 3 * m * u2 * arm.c2.z + u2 * u * arm.hand.z,
+        );
+      };
+      if (longhair) {
+        const foreleg = longhair.forelegs[arm.s < 0 ? 0 : 1];
+        this.tmpArmOff.subVectors(arm.hand, arm.c2).setY(0).normalize();
+        const reachPad = (onMouse ? 0.045 : 0.083) * (1 - tuck);
+        foreleg.update((u, out) => {
+          traceArm(u, out);
+          out.y += (0.052 + 0.021 * (1 - tuck)) * smoothstep(0.46, 0.94, u);
+          out.addScaledVector(this.tmpArmOff, reachPad * smoothstep(0.74, 1, u));
+        }, (u) => {
+          const width = mix(0.169, 0.108, smoothstep(0.14, 0.65, u)) * mix(1.0, 0.69, tuck);
+          const pad = mix(width, mix(0.116, 0.095, tuck), smoothstep(0.60, 0.79, u));
+          const padStart = mix(0.76, 0.83, tuck);
+          const roundEnd = Math.max(0, (u - padStart) / (1 - padStart));
+          return pad * Math.sqrt(Math.max(0.0001, 1 - roundEnd * roundEnd));
+        });
+        continue;
+      }
+
       arm.limb.update(
-        (u, out) => {
-          const m = 1 - u;
-          const m2 = m * m;
-          const u2 = u * u;
-          out.set(
-            m2 * m * arm.shoulder.x + 3 * m2 * u * arm.c1.x + 3 * m * u2 * arm.c2.x + u2 * u * arm.hand.x,
-            m2 * m * arm.shoulder.y + 3 * m2 * u * arm.c1.y + 3 * m * u2 * arm.c2.y + u2 * u * arm.hand.y,
-            m2 * m * arm.shoulder.z + 3 * m2 * u * arm.c1.z + 3 * m * u2 * arm.c2.z + u2 * u * arm.hand.z,
-          );
-        },
+        traceArm,
         // Cute chubby plush kitten arms (matches approved 2D arm optimization — shorter & fuller!)
         (u) => mix(0.118, 0.082, smoothstep(0.0, 0.88, u)) * mix(1.0, 0.76, tuck * (1 - u * 0.4)),
       );

@@ -9,7 +9,7 @@ import {
   type TailKeyMode,
 } from './catEngine';
 import { catAudio } from './audio';
-import { DEFAULT_BUILTIN_CATS, type CatSkinConfig } from './catSkins';
+import { DEFAULT_BUILTIN_CATS, DEFAULT_CAT_ID, FACAI_ONLY, type CatSkinConfig } from './catSkins';
 import {
   getKeyboardLayout,
   resolveKeyByVk,
@@ -139,8 +139,8 @@ let settings: AppSettings = {
   showKeyBubbles: true,
   soundEnabled: true,
   autostart: false,
-  catBreed: 'black',
-  mcpEnabled: true,
+  catBreed: DEFAULT_CAT_ID,
+  mcpEnabled: !FACAI_ONLY,
   mcpPort: 27420,
   keyboardLayout: '65',
   keyboardOrientation: 'cat',
@@ -822,6 +822,10 @@ async function triggerManualUpdateCheck(): Promise<void> {
 }
 
 async function bootstrap(): Promise<void> {
+  if (FACAI_ONLY) {
+    document.documentElement.classList.add('facai-only');
+    document.title = '发财';
+  }
   engine.start();
 
   // Hide Windows-only desktop shortcut button on macOS
