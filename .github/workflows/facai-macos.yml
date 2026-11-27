@@ -41,7 +41,8 @@ jobs:
           plist="$app/Contents/Info.plist"
           executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = 'com.kurocat.facai'
-          lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/$executable"
+          lipo "$app/Contents/MacOS/$executable" -verify_arch arm64 x86_64
+          lipo -info "$app/Contents/MacOS/$executable"
           scripts/macos-codesign.sh sign "$app"
           requirement="$(scripts/macos-codesign.sh requirement "$app")"
 
