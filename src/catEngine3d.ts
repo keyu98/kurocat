@@ -6,7 +6,7 @@ import type { KeyboardOrientation, TailKeyMode } from './catEngine';
 import { DEFAULT_TAIL_KEY_IDS } from './catEngine';
 import { catAudio } from './audio';
 import { HeadPatSwat, normalizeSwatChance } from './headPatSwat';
-import { ScreenPawPrint3D } from './screenPawPrint3d';
+import { ScreenClawScratches3D } from './screenClawScratches3d';
 import {
   FurShaderSystem,
   resolveFurPalette3D,
@@ -522,8 +522,8 @@ export class KuroCatEngine3D {
 
   private cancelHeadPatSwat(): void {
     this.headPatSwat.cancel();
-    this.swatPalm.visible = false;
-    this.pawPrint.clear();
+    if (this.longhairModel) this.longhairModel.swatPaw.root.visible = false;
+    this.clawScratches.clear();
   }
 
   public hitTestKeyAtClientPoint(clientX: number, clientY: number) {
@@ -620,11 +620,7 @@ export class KuroCatEngine3D {
 
   // Shared materials updated on skin switch
   private readonly pawMat: THREE.ShaderMaterial;
-  private readonly swatPalm = new THREE.Group();
-  private readonly swatToes: THREE.Group[] = [];
-  private readonly swatPalmMat = createHeadsetMaterial('#fff7e9', 0.06, 0.10, '#fff4df');
-  private readonly swatPadMat = createHeadsetMaterial('#e7a5a2', 0.10, 0.12, '#f9d4c8');
-  private readonly pawPrint: ScreenPawPrint3D;
+  private readonly clawScratches: ScreenClawScratches3D;
   private readonly hindPaws: THREE.Mesh[] = [];
   private readonly toeMat = new THREE.MeshBasicMaterial({ color: '#343640', depthTest: true });
   private readonly lidArcMat = new THREE.MeshBasicMaterial({
@@ -860,7 +856,7 @@ export class KuroCatEngine3D {
 
     this.camera = new THREE.PerspectiveCamera(22, 1.35, 0.1, 100);
     this.scene.add(this.camera);
-    this.pawPrint = new ScreenPawPrint3D(this.camera);
+    this.clawScratches = new ScreenClawScratches3D(this.camera);
     this.desk = new KeyboardAndMouse3D(this.scene);
     this.pawMat = this.furSystem.createMaterial('PAW');
 
@@ -1185,33 +1181,6 @@ export class KuroCatEngine3D {
         hand: new THREE.Vector3(),
       });
     }
-
-    // Compact half-fist: four adjacent toes curl over the palm, rather than
-    // spreading into an open hand. Their pads turn underneath on the punch.
-    const padSphere = new THREE.SphereGeometry(1, 18, 12);
-    const pawPart = (mat: THREE.Material, pos: number[], size: number[]) => {
-      const mesh = new THREE.Mesh(padSphere, mat);
-      mesh.position.set(pos[0], pos[1], pos[2]);
-      mesh.scale.set(size[0], size[1], size[2]);
-      return mesh;
-    };
-    this.swatPalm.add(
-      pawPart(this.swatPalmMat, [0, -0.025, 0], [0.142, 0.128, 0.100]),
-      pawPart(this.swatPadMat, [0, -0.041, 0.098], [0.080, 0.062, 0.021]),
-    );
-    for (let i = 0; i < 4; i++) {
-      const toe = new THREE.Group();
-      const edge = i === 0 || i === 3;
-      toe.position.set((i - 1.5) * 0.063, edge ? 0.057 : 0.074, 0.027);
-      toe.add(
-        pawPart(this.swatPalmMat, [0, 0.045, 0.012], [0.047, 0.078, 0.055]),
-        pawPart(this.swatPadMat, [0, 0.056, 0.062], [0.028, 0.036, 0.016]),
-      );
-      this.swatToes.push(toe);
-      this.swatPalm.add(toe);
-    }
-    this.swatPalm.visible = false;
-    this.scene.add(this.swatPalm);
 
     const mkTrack = (side: -1 | 1): PawTrack3D => {
       const pos = new THREE.Vector3(side * 0.28, 0.34, 0.62);
@@ -1605,7 +1574,7 @@ export class KuroCatEngine3D {
       this.elapsed - this.cursorActiveAt < 2.4 ||
       this.isCross ||
       this.headPatSwat.isActive(this.elapsed * 1000) ||
-      this.pawPrint.sprite.visible ||
+      this.clawScratches.sprite.visible ||
       this.petting ||
       this.elapsed < this.curiousUntil ||
       this.popups.length > 0 ||
@@ -1651,7 +1620,6 @@ export class KuroCatEngine3D {
   public setCatSkin(skin: CatSkinConfig): void {
     if (this.currentSkin?.id !== skin.id) this.cancelHeadPatSwat();
     this.currentSkin = skin;
-    this.swatPalmMat.uniforms.uBase.value.set(skin.bellyBibColor ?? skin.pawColor ?? skin.furColor);
     const p = resolveFurPalette3D(skin, this.renderStyle);
     this.longhairActive = skin.id === ORANGE_WHITE_LONGHAIR.id;
     if (this.longhairActive) {
@@ -1661,6 +1629,7 @@ export class KuroCatEngine3D {
         this.headMount.add(model.head);
         this.ears.forEach((ear, i) => ear.group.add(model.ears[i]));
         this.scene.add(...model.forelegs.map((foreleg) => foreleg.mesh));
+        this.scene.add(model.swatPaw.root);
         this.longhairTail = createCleanLimb(this.scene, {
           segments: 38,
           radial: 16,
@@ -1677,6 +1646,7 @@ export class KuroCatEngine3D {
       this.longhairModel.head.visible = this.longhairActive;
       for (const ear of this.longhairModel.ears) ear.visible = this.longhairActive;
       for (const foreleg of this.longhairModel.forelegs) foreleg.mesh.visible = this.longhairActive;
+      if (!this.longhairActive) this.longhairModel.swatPaw.root.visible = false;
     }
     for (const arm of this.arms) {
       arm.paw.visible = !this.longhairActive;
@@ -2686,10 +2656,11 @@ export class KuroCatEngine3D {
         const foreleg = longhair.forelegs[arm.s < 0 ? 0 : 1];
         this.tmpArmOff.subVectors(arm.hand, arm.c2).setY(0).normalize();
         const reachPad = (onMouse ? 0.045 : 0.083) * (1 - tuck);
+        const swatWrist = arm.s > 0 && swatPose ? 1 - swatPose.weight : 1;
         foreleg.update((u, out) => {
           traceArm(u, out);
-          out.y += (0.052 + 0.021 * (1 - tuck)) * smoothstep(0.46, 0.94, u);
-          out.addScaledVector(this.tmpArmOff, reachPad * smoothstep(0.74, 1, u));
+          out.y += (0.052 + 0.021 * (1 - tuck)) * smoothstep(0.46, 0.94, u) * swatWrist;
+          out.addScaledVector(this.tmpArmOff, reachPad * smoothstep(0.74, 1, u) * swatWrist);
         }, (u) => {
           const width = mix(0.169, 0.108, smoothstep(0.14, 0.65, u)) * mix(1.0, 0.69, tuck);
           const pad = mix(width, mix(0.116, 0.095, tuck), smoothstep(0.60, 0.79, u));
@@ -2713,22 +2684,27 @@ export class KuroCatEngine3D {
       arm.paw.rotation.y = Math.atan2(arm.hand.x - arm.c2.x, Math.max(0.1, arm.hand.z - arm.c2.z)) * 0.42;
     }
 
-    this.swatPalm.visible = Boolean(longhair && swatPose && swatPose.lift > 0.12 && !this.privacyMode);
-    if (this.swatPalm.visible && swatPose) {
-      this.swatPalm.position.copy(this.paws.R.pos);
+    const swatPaw = longhair?.swatPaw;
+    if (swatPaw) swatPaw.root.visible = Boolean(swatPose && swatPose.lift > 0.12 && !this.privacyMode);
+    if (swatPaw?.root.visible && swatPose) {
+      swatPaw.root.position.copy(this.paws.R.pos);
       // Show the underside on the windup; curl the toes into rounded knuckles
       // and tip the fist forward at contact. The central pad stays visible.
-      this.swatPalm.quaternion.copy(this.camera.quaternion);
-      this.swatPalm.rotateZ(-0.20 + swatPose.x * 0.15);
-      this.swatPalm.rotateY(-0.28);
-      this.swatPalm.rotateX(-0.18 * swatPose.grip);
-      this.swatPalm.scale.setScalar(swatPose.weight * (1.12 + swatPose.reach * 0.18));
-      for (const toe of this.swatToes) toe.rotation.x = 0.65 + swatPose.grip * 1.45;
+      swatPaw.root.quaternion.copy(this.camera.quaternion);
+      swatPaw.root.rotateZ(-0.20 + swatPose.x * 0.15);
+      swatPaw.root.rotateY(-0.28);
+      swatPaw.root.rotateX(-0.18 * swatPose.grip);
+      swatPaw.root.scale.setScalar(swatPose.weight * (1 + swatPose.reach * 0.08));
+      swatPaw.pose(swatPose.grip, swatPose.claws);
     }
     if (this.headPatSwat.takeImpact(t * 1000)) {
-      this.pawPrint.stamp(this.paws.R.pos, this.camera, t);
+      let contact = this.paws.R.pos;
+      if (swatPaw) {
+        contact = swatPaw.contactPoint(this.tmpFxPos);
+      }
+      this.clawScratches.strike(contact, this.camera, t);
     }
-    this.pawPrint.update(t, this.camera);
+    this.clawScratches.update(t, this.camera);
 
     // 10) Floating Key Bubbles, Anger Mark 💢 & Sleep Zzz FX
     for (let i = this.popups.length - 1; i >= 0; i--) {

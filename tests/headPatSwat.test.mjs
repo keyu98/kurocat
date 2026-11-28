@@ -160,7 +160,10 @@ test("the half-grip tightens as the raised paw punches forward and releases on r
   const hit = s.pose(100 + SWAT_IMPACT_MS);
   const recovery = s.pose(100 + SWAT_DURATION_MS * 0.9);
   assert.ok(raised.grip > 0 && raised.grip < hit.grip);
+  assert.equal(raised.claws, 0);
   assert.equal(hit.grip, 1);
+  assert.equal(hit.claws, 1);
   assert.ok(hit.reach > raised.reach + 0.9);
   assert.ok(recovery.grip < hit.grip);
+  assert.equal(recovery.claws, 0);
 });

@@ -477,6 +477,95 @@ function eyeMaterial(): THREE.ShaderMaterial {
   });
 }
 
+// Keep the interaction paw in the character's material system: ivory foreleg
+// shading, low relief pads and small matte claw tips, without accessory gloss.
+class LonghairSwatPaw3D {
+  public readonly root = new THREE.Group();
+  public readonly toes: THREE.Group[] = [];
+  public readonly claws: THREE.Mesh[] = [];
+  public readonly padMaterial = sculptMaterial('SOLID');
+  private readonly clawMaterial = sculptMaterial('SOLID');
+
+  constructor(public readonly furMaterial: THREE.ShaderMaterial) {
+    const sphere = new THREE.SphereGeometry(1, 24, 16);
+    const part = (material: THREE.Material, pos: number[], size: number[]) => {
+      const mesh = new THREE.Mesh(sphere, material);
+      mesh.position.set(pos[0], pos[1], pos[2]);
+      mesh.scale.set(size[0], size[1], size[2]);
+      return mesh;
+    };
+    this.root.add(part(furMaterial, [0, -0.025, 0], [0.127, 0.118, 0.080]));
+
+    // A shallow, three-lobed metacarpal pad follows the palm's curvature.
+    const pad = new THREE.Shape();
+    pad.moveTo(0, 0.028);
+    pad.bezierCurveTo(-0.019, 0.044, -0.032, 0.019, -0.049, -0.003);
+    pad.bezierCurveTo(-0.067, -0.030, -0.042, -0.046, -0.021, -0.034);
+    pad.quadraticCurveTo(0, -0.044, 0.021, -0.034);
+    pad.bezierCurveTo(0.042, -0.046, 0.067, -0.030, 0.049, -0.003);
+    pad.bezierCurveTo(0.032, 0.019, 0.019, 0.044, 0, 0.028);
+    const padGeo = new THREE.ExtrudeGeometry(pad, {
+      depth: 0.002, bevelEnabled: true, bevelThickness: 0.003,
+      bevelSize: 0.004, bevelSegments: 3, curveSegments: 10,
+    });
+    const pos = padGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i) - 0.016;
+      pos.setZ(i, pos.getZ(i) - 0.03 * ((x / 0.127) ** 2 + (y / 0.118) ** 2));
+    }
+    padGeo.computeVertexNormals();
+    const palmPad = new THREE.Mesh(padGeo, this.padMaterial);
+    palmPad.position.set(0, -0.041, 0.079);
+    this.root.add(palmPad);
+
+    const clawCurve = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(0, 0.058, 0.075),
+      new THREE.Vector3(0, 0.030, 0.154),
+      new THREE.Vector3(0, -0.009, 0.128),
+    );
+    const claw = new TaperTube3D(10, 6, this.clawMaterial);
+    claw.update((t, out) => clawCurve.getPoint(t, out), (t) => 0.0055 * (1 - t) + 0.0004);
+    for (let i = 0; i < 4; i++) {
+      const x = (i - 1.5) * 0.055;
+      const edge = i === 0 || i === 3;
+      const toe = new THREE.Group();
+      toe.position.set(x, edge ? 0.041 : 0.054, 0.020);
+      toe.add(
+        part(furMaterial, [0, 0.035, 0.010], [0.041, 0.064, 0.046]),
+        part(this.padMaterial, [0, 0.049, 0.053], [0.023, 0.026, 0.005]),
+      );
+      this.toes.push(toe);
+      this.root.add(toe);
+      const tip = new THREE.Mesh(claw.mesh.geometry, this.clawMaterial);
+      tip.position.set(x, edge ? -0.011 : 0, 0);
+      tip.visible = false;
+      this.claws.push(tip);
+      this.root.add(tip);
+    }
+    this.root.visible = false;
+  }
+
+  public setSkin(skin: CatSkinConfig): void {
+    const pad = new THREE.Color(skin.noseColor ?? '#e9999b')
+      .lerp(new THREE.Color(skin.pawOutlineColor ?? '#b59b82'), 0.22);
+    setCoatColors(this.padMaterial, `#${pad.getHexString()}`);
+    setCoatColors(this.clawMaterial, skin.earTuftColor ?? '#fff4df');
+  }
+
+  public pose(grip: number, claws: number): void {
+    for (const toe of this.toes) toe.rotation.x = 0.65 + grip * 1.45;
+    for (const claw of this.claws) {
+      claw.visible = claws > 0.01;
+      claw.scale.setScalar(claws);
+    }
+  }
+
+  public contactPoint(out: THREE.Vector3): THREE.Vector3 {
+    // Mean of the four curved claw tips at full extension.
+    return this.root.localToWorld(out.set(0, -0.0145, 0.128));
+  }
+}
+
 export class LonghairModel3D {
   public readonly body: THREE.Mesh;
   public readonly head = new THREE.Group();
@@ -484,6 +573,7 @@ export class LonghairModel3D {
   public readonly hitMeshes: THREE.Mesh[];
   public readonly tailMaterial = sculptMaterial('SOLID');
   public readonly limbMaterial = sculptMaterial('LIMB');
+  public readonly swatPaw = new LonghairSwatPaw3D(this.limbMaterial);
   public readonly forelegs = [
     new TaperTube3D(28, 14, this.limbMaterial),
     new TaperTube3D(28, 14, this.limbMaterial),
@@ -598,6 +688,7 @@ export class LonghairModel3D {
     this.coat.uniforms.uFlank.value.set(skin.flankColor ?? ginger);
     setCoatColors(this.limbMaterial, skin.furColor);
     this.limbMaterial.uniforms.uRuff.value.set(ruff);
+    this.swatPaw.setSkin(skin);
     const innerEar = skin.earInnerColor ?? '#edb19d';
     setCoatColors(this.earCoat, skin.earOuterColor ?? ginger, innerEar, innerEar, skin.earTuftColor ?? skin.furColor);
     setCoatColors(this.noseCoat, skin.noseColor ?? '#df8781');

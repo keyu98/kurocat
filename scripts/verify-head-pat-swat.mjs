@@ -89,6 +89,7 @@ try {
   });
   checks.threeD = await page.evaluate(() => {
     const out = {};
+    const paw = g.longhairModel.swatPaw;
     out.legacyFacai2dBecomes3d = resolveCatRenderMode(skin.id, "2d") === "3d";
     out.otherCatsKeep2d = resolveCatRenderMode("black", "2d") === "2d";
     out.headSwats = rub3();
@@ -106,40 +107,59 @@ try {
     );
     out.angerMark = g.angerSprite.visible;
     out.palmPadsVisible =
-      g.swatPalm.visible && g.swatToes.length === 4 &&
-      g.swatToes.every((toe) => toe.children[1].material === g.swatPadMat);
-    const windupCurl = g.swatToes[0].rotation.x;
+      paw.root.visible && paw.toes.length === 4 &&
+      paw.toes.every((toe) => toe.children[1].material === paw.padMaterial);
+    out.pawSharesOriginalForelegMaterial = paw.furMaterial === g.longhairModel.limbMaterial &&
+      paw.toes.every((toe) => toe.children[0].material === g.longhairModel.limbMaterial);
+    const expectedPad = paw.padMaterial.uniforms.uCream.value.clone().set(skin.noseColor)
+      .lerp(paw.padMaterial.uniforms.uCream.value.clone().set(skin.pawOutlineColor), 0.22);
+    out.padsFollowCharacterPalette = paw.padMaterial.uniforms.uCream.value.getHexString() === expectedPad.getHexString();
+    out.padsHaveLowRelief = paw.toes.every((toe) => toe.children[1].scale.z < 0.01);
+    out.clawsHiddenDuringWindup = paw.claws.every((claw) => !claw.visible);
+    const windupCurl = paw.toes[0].rotation.x;
     const normal = new g.camera.position.constructor(0, 0, 1).applyQuaternion(
-      g.swatPalm.quaternion,
+      paw.root.quaternion,
     );
     const towardViewer = g.camera.position
       .clone()
-      .sub(g.swatPalm.position)
+      .sub(paw.root.position)
       .normalize();
     out.palmFacesViewer = normal.dot(towardViewer) > 0.9;
-    out.noPrintBeforeContact = !g.pawPrint.sprite.visible;
+    out.noScratchesBeforeContact = !g.clawScratches.sprite.visible;
     g.headPatSwat.startedAt = g.elapsed * 1000 - 410;
     g.update(0.016);
-    out.fistClosesOnContact = g.swatToes.every((toe) => toe.rotation.x > windupCurl + 0.5);
-    out.contactLeavesPrint = g.pawPrint.sprite.visible && g.pawPrint.stampedAt === g.elapsed;
-    out.fistVisibleBeforeInk = g.pawPrint.sprite.material.opacity === 0;
-    const printAt = g.pawPrint.stampedAt;
+    out.fistClosesOnContact = paw.toes.every((toe) => toe.rotation.x > windupCurl + 0.5);
+    out.clawTipsExtendOnContact = paw.claws.every((claw) => claw.visible && claw.scale.x > 0.95);
+    out.contactLeavesScratches = g.clawScratches.sprite.visible && g.clawScratches.startedAt === g.elapsed;
+    out.fistVisibleBeforeCuts = g.clawScratches.sprite.material.opacity === 0;
+    const strikeAt = g.clawScratches.startedAt;
     g.scene.updateMatrixWorld(true);
-    const printPosition = () => g.pawPrint.sprite.getWorldPosition(g.paws.R.pos.clone()).project(g.camera);
-    const stamped = printPosition();
+    const scratchPosition = () => g.clawScratches.sprite.getWorldPosition(g.paws.R.pos.clone()).project(g.camera);
+    const anchored = scratchPosition();
     g.orbitAzimuthTarget = 25;
     g.update(0.05);
-    out.inkAppearsAfterContact = g.pawPrint.sprite.material.opacity > 0.5;
+    out.cutsAppearAfterContact = g.clawScratches.sprite.material.opacity > 0.5;
     g.scene.updateMatrixWorld(true);
-    out.printFixedOnScreen = printPosition().distanceTo(stamped) < 1e-6;
-    out.onlyOnePrintPerPunch = g.pawPrint.stampedAt === printAt;
+    out.scratchesFixedOnScreen = scratchPosition().distanceTo(anchored) < 1e-6;
+    out.onlyOneScratchSetPerPunch = g.clawScratches.startedAt === strikeAt;
     g.orbitAzimuthTarget = 0;
     for (let i = 0; i < 12; i++) g.update(0.05);
-    out.printOutlastsFist = !g.swatPalm.visible && g.pawPrint.sprite.visible;
+    const canvas = g.clawScratches.sprite.material.map.image;
+    const pixels = canvas.getContext("2d").getImageData(0, 0, 256, 256).data;
+    let tracks = 0, opaque = 0, inside = false;
+    for (let x = 0; x < 256; x++) {
+      const cut = pixels[(128 * 256 + x) * 4 + 3] > 100;
+      if (cut && !inside) tracks++;
+      inside = cut;
+    }
+    for (let i = 3; i < pixels.length; i += 4) if (pixels[i] > 100) opaque++;
+    out.threeThinScratchTracks = tracks === 3 && opaque < 256 * 256 * 0.12;
+    window.scratchTexture = canvas.toDataURL("image/png");
+    out.scratchesOutlastFist = !paw.root.visible && g.clawScratches.sprite.visible;
     for (let i = 0; i < 6; i++) g.update(0.05);
-    out.printFades = g.pawPrint.sprite.material.opacity > 0 && g.pawPrint.sprite.material.opacity < 0.8;
+    out.scratchesFade = g.clawScratches.sprite.material.opacity > 0 && g.clawScratches.sprite.material.opacity < 0.8;
     for (let i = 0; i < 20; i++) g.update(0.05);
-    out.printExpires = !g.pawPrint.sprite.visible;
+    out.scratchesExpire = !g.clawScratches.sprite.visible;
     out.swatDoesNotLatchAnnoyance = !g.isCross;
     out.alphaRenderer = g.renderer.getContext().getContextAttributes().alpha;
     g.headPatSwat.rolledAt = -Infinity;
@@ -147,10 +167,10 @@ try {
     out.resumedForPrivacy = rub3();
     g.headPatSwat.startedAt = g.elapsed * 1000 - 410;
     g.update(0.016);
-    out.privacyInterruptsLivePunch = g.headPatSwat.isActive(g.elapsed * 1000) && g.pawPrint.sprite.visible;
+    out.privacyInterruptsLivePunch = g.headPatSwat.isActive(g.elapsed * 1000) && g.clawScratches.sprite.visible;
     g.setPrivacyMode(true);
     out.privacyCancels = !g.headPatSwat.isActive(g.elapsed * 1000);
-    out.privacyClearsPrint = !g.pawPrint.sprite.visible;
+    out.privacyClearsScratches = !g.clawScratches.sprite.visible;
     g.update(0.05);
     out.privacyClearsAnger = g.longhairModel.eyes.every(
       (eye) => eye.uniforms.uAnger.value === 0,
@@ -166,9 +186,9 @@ try {
     out.reenabled = rub3();
     g.headPatSwat.startedAt = g.elapsed * 1000 - 410;
     g.update(0.016);
-    out.newPunchLeavesNewPrint = g.pawPrint.sprite.visible && g.pawPrint.stampedAt > printAt;
+    out.newPunchLeavesNewScratches = g.clawScratches.sprite.visible && g.clawScratches.startedAt > strikeAt;
     g.setTailPickerActive(true);
-    out.pickerClearsPrint = !g.pawPrint.sprite.visible;
+    out.pickerClearsScratches = !g.clawScratches.sprite.visible;
     g.setTailPickerActive(false);
     g.headPatSwat.rolledAt = -Infinity;
     g.headPatSwat.resetGesture();
@@ -180,7 +200,7 @@ try {
       (eye) => eye.uniforms.uAnger.value === 0,
     );
     out.angerMarkRestored = !g.angerSprite.visible;
-    out.palmTucksAway = !g.swatPalm.visible;
+    out.palmTucksAway = !paw.root.visible;
     g.headPatSwat.cancel();
     g.headPatSwat.rolledAt = -Infinity;
     const { y, xs } = headLine(),
@@ -219,8 +239,10 @@ try {
     g.renderer.render(g.scene, g.camera);
     return out;
   });
-  for (const [key, value] of Object.entries(checks.threeD))
-    assert.equal(value, true, `3D ${key}`);
+  writeFileSync(`${outputDir}/scratch-texture.png`, Buffer.from(
+    (await page.evaluate(() => window.scratchTexture)).split(",")[1], "base64",
+  ));
+  assert.deepEqual(Object.entries(checks.threeD).filter(([, value]) => !value), [], "3D render checks");
   if (capture)
     await page.evaluate(async () => {
       g.renderer.dispose();
