@@ -198,7 +198,7 @@ try {
   });
   if (!values['record-before']) {
     const orangeProbes = new Set([
-      'shoulder-center', 'shoulder-right', 'upper-back-center', 'spine-middle', 'spine-lower',
+      'shoulder-center', 'shoulder-left', 'shoulder-right', 'upper-back-center', 'spine-middle', 'spine-lower',
       'flank-right', 'hip-right',
     ]);
     for (const [name, probe] of Object.entries(probes)) {

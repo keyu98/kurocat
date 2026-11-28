@@ -322,8 +322,8 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
           p = vLocation;
           color = uCream;
 
-          // Both references share one coat: a narrow dorsal stripe, a shoulder
-          // patch and a rear flank patch visible from the side. Rest coordinates
+          // Both references share one coat: a narrow dorsal stripe, shoulder
+          // patches on both sides and one rear flank patch. Rest coordinates
           // keep all markings attached during breathing, sleep and swats.
           float side = sign(p.x);
           float flow = p.y + 0.18 * abs(p.x);
@@ -334,6 +334,10 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
           vec2 shoulder = vec2(p.x - 0.27 + 0.035 * sin(7.0 * p.y), (p.y - 0.50) * 0.92);
           float shoulderPatch = 1.0 - smoothstep(-0.10, 0.08,
             length(shoulder / vec2(0.52, 0.32)) - 1.0 + raggedEdge);
+          vec2 shoulderOpposite = vec2(p.x + 0.30 + 0.030 * sin(8.0 * p.y), (p.y - 0.48) * 0.92);
+          float shoulderOppositePatch = 1.0 - smoothstep(-0.10, 0.08,
+            length(shoulderOpposite / vec2(0.46, 0.30)) - 1.0 + raggedEdge);
+          shoulderPatch = max(shoulderPatch, shoulderOppositePatch);
           vec2 rear = vec2(p.x - 0.44 + 0.04 * sin(6.0 * p.y),
                            p.y + 0.30 - 0.45 * (p.x - 0.44));
           float rearPatch = 1.0 - smoothstep(-0.10, 0.08,
