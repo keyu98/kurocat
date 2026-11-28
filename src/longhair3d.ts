@@ -322,9 +322,9 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
           p = vLocation;
           color = uCream;
 
-          // The reference has a white spine between an asymmetric shoulder patch
-          // and a rear flank patch that joins the ginger tail. Rest coordinates
-          // keep both markings attached during breathing, sleep and swats.
+          // Both references share one coat: a narrow dorsal stripe, a shoulder
+          // patch and a rear flank patch visible from the side. Rest coordinates
+          // keep all markings attached during breathing, sleep and swats.
           float side = sign(p.x);
           float flow = p.y + 0.18 * abs(p.x);
           float locks = 0.024 * sin(19.0 * flow + side * 1.7)
@@ -338,9 +338,15 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
                            p.y + 0.30 - 0.45 * (p.x - 0.44));
           float rearPatch = 1.0 - smoothstep(-0.10, 0.08,
             length(rear / vec2(0.36, 0.48)) - 1.0 + raggedEdge);
+          float spine = 0.025 + 0.026 * sin(4.7 * p.y + 0.3) + 0.012 * sin(11.0 * p.y);
+          float spineWidth = 0.205 + 0.025 * sin(8.0 * p.y - 0.6);
+          float spinePatch = 1.0 - smoothstep(-0.08, 0.08,
+            abs(p.x - spine) - spineWidth + raggedEdge);
+          spinePatch *= smoothstep(-0.74, -0.66, p.y) * smoothstep(0.30, 0.52, -p.z);
           float shoulderCoat = shoulderPatch * smoothstep(-0.20, 0.10, -p.z);
           float rearCoat = rearPatch * smoothstep(0.02, 0.30, -p.z);
-          color = mix(color, uFlank, max(shoulderCoat, rearCoat) * (1.0 - vHeadMix));
+          float backPatch = max(max(shoulderCoat, rearCoat), spinePatch);
+          color = mix(color, uFlank, backPatch * (1.0 - vHeadMix));
 
           // The broad ivory bib ends in a few rounded, downward locks.
           float bibEdge = -0.26 + 0.84 * abs(p.x) + 0.051 * cos(p.x * 23.0);

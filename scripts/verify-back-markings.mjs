@@ -197,7 +197,10 @@ try {
     return probes;
   });
   if (!values['record-before']) {
-    const orangeProbes = new Set(['shoulder-center', 'shoulder-right', 'upper-back-center', 'flank-right', 'hip-right']);
+    const orangeProbes = new Set([
+      'shoulder-center', 'shoulder-right', 'upper-back-center', 'spine-middle', 'spine-lower',
+      'flank-right', 'hip-right',
+    ]);
     for (const [name, probe] of Object.entries(probes)) {
       assert.equal(probe.orange, orangeProbes.has(name), `${name}: ${JSON.stringify(probe)}`);
       assert.equal(probe.rgba[3], 255, `${name}: coat must remain opaque`);
