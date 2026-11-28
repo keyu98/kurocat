@@ -3,13 +3,17 @@ import { smoothstep } from './keyboard3d';
 
 const SCRATCH_LIFETIME = 1.65;
 
-function drawClawScratches(canvas: HTMLCanvasElement, progress: number): void {
+function drawClawScratches(canvas: HTMLCanvasElement, progress: number, side: -1 | 1): void {
   const ctx = canvas.getContext('2d')!;
   ctx.clearRect(0, 0, 256, 256);
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, 0, 256, progress * 256);
   ctx.clip();
+  if (side < 0) {
+    ctx.translate(256, 0);
+    ctx.scale(-1, 1);
+  }
   // Three tapered cuts, drawn from top-right to bottom-left with the wrist
   // flick. Warm grooves and a fine ivory edge read on light or dark desktops.
   for (const offset of [-46, 0, 46]) {
@@ -72,6 +76,7 @@ export class ScreenClawScratches3D {
   private readonly anchor = new THREE.Vector3();
   private startedAt = -Infinity;
   private revealed = -1;
+  private side: -1 | 1 = 1;
 
   constructor(camera: THREE.PerspectiveCamera) {
     this.sprite.visible = false;
@@ -84,11 +89,12 @@ export class ScreenClawScratches3D {
     this.sprite.visible = false;
   }
 
-  public strike(worldPoint: THREE.Vector3, camera: THREE.PerspectiveCamera, now: number): void {
+  public strike(worldPoint: THREE.Vector3, camera: THREE.PerspectiveCamera, now: number, side: -1 | 1): void {
     camera.updateMatrixWorld();
     this.anchor.copy(worldPoint).project(camera);
-    // Anchor the upper ends at the claw tips; the cuts trail down and left.
-    this.anchor.x -= 0.06 / camera.aspect;
+    // Mirror both the trail and its anchor for the selected paw.
+    this.side = side;
+    this.anchor.x -= side * 0.06 / camera.aspect;
     this.anchor.y -= 0.17;
     this.startedAt = now;
     this.revealed = -1;
@@ -107,7 +113,7 @@ export class ScreenClawScratches3D {
     const reveal = smoothstep(0, 0.13, age);
     if (reveal !== this.revealed) {
       const texture = this.sprite.material.map!;
-      drawClawScratches(texture.image as HTMLCanvasElement, reveal);
+      drawClawScratches(texture.image as HTMLCanvasElement, reveal, this.side);
       texture.needsUpdate = true;
       this.revealed = reveal;
     }

@@ -2563,7 +2563,7 @@ export class KuroCatEngine3D {
 
     // 9) Sleek Unified KuroCat Arms + Cozy Tucked Idle Belly Paws!
     const updatePaw = (paw: PawTrack3D, isLeft: boolean) => {
-      const swat = !isLeft ? this.headPatSwat.pose(t * 1000) : null;
+      const swat = swatPose?.side === paw.side ? swatPose : null;
       if (swat) {
         paw.tuckWeight = 1 - swat.weight;
         this.tmpPawLocal.set(swat.x * 0.65, 0.14 + swat.lift * 1.70,
@@ -2624,7 +2624,7 @@ export class KuroCatEngine3D {
       this.attachLocal(shoulderLocal, arm.shoulder);
       arm.hand.copy(pawTrack.pos);
 
-      const onMouse = arm.s < 0 && mousing;
+      const onMouse = arm.s < 0 && mousing && swatPose?.side !== arm.s;
       const reach = arm.shoulder.distanceTo(arm.hand);
       const lift = mix(0.24, 0.06, clamp((reach - 0.85) / 0.85, 0, 1)) * (1 - tuck * 0.65);
 
@@ -2656,7 +2656,7 @@ export class KuroCatEngine3D {
         const foreleg = longhair.forelegs[arm.s < 0 ? 0 : 1];
         this.tmpArmOff.subVectors(arm.hand, arm.c2).setY(0).normalize();
         const reachPad = (onMouse ? 0.045 : 0.083) * (1 - tuck);
-        const swatWrist = arm.s > 0 && swatPose ? 1 - swatPose.weight : 1;
+        const swatWrist = swatPose?.side === arm.s ? 1 - swatPose.weight : 1;
         foreleg.update((u, out) => {
           traceArm(u, out);
           out.y += (0.052 + 0.021 * (1 - tuck)) * smoothstep(0.46, 0.94, u) * swatWrist;
@@ -2687,22 +2687,23 @@ export class KuroCatEngine3D {
     const swatPaw = longhair?.swatPaw;
     if (swatPaw) swatPaw.root.visible = Boolean(swatPose && swatPose.lift > 0.12 && !this.privacyMode);
     if (swatPaw?.root.visible && swatPose) {
-      swatPaw.root.position.copy(this.paws.R.pos);
+      swatPaw.root.position.copy(swatPose.side < 0 ? this.paws.L.pos : this.paws.R.pos);
       // Show the underside on the windup; curl the toes into rounded knuckles
       // and tip the fist forward at contact. The central pad stays visible.
       swatPaw.root.quaternion.copy(this.camera.quaternion);
-      swatPaw.root.rotateZ(-0.20 + swatPose.x * 0.15);
-      swatPaw.root.rotateY(-0.28);
+      swatPaw.root.rotateZ(swatPose.side * (-0.20 + Math.abs(swatPose.x) * 0.15));
+      swatPaw.root.rotateY(swatPose.side * -0.28);
       swatPaw.root.rotateX(-0.18 * swatPose.grip);
-      swatPaw.root.scale.setScalar(swatPose.weight * (1 + swatPose.reach * 0.08));
+      const size = swatPose.weight * (1 + swatPose.reach * 0.08);
+      swatPaw.root.scale.set(swatPose.side * size, size, size);
       swatPaw.pose(swatPose.grip, swatPose.claws);
     }
-    if (this.headPatSwat.takeImpact(t * 1000)) {
-      let contact = this.paws.R.pos;
+    if (this.headPatSwat.takeImpact(t * 1000) && swatPose) {
+      let contact = swatPose.side < 0 ? this.paws.L.pos : this.paws.R.pos;
       if (swatPaw) {
         contact = swatPaw.contactPoint(this.tmpFxPos);
       }
-      this.clawScratches.strike(contact, this.camera, t);
+      this.clawScratches.strike(contact, this.camera, t, swatPose.side);
     }
     this.clawScratches.update(t, this.camera);
 

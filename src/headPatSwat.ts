@@ -26,6 +26,7 @@ export class HeadPatSwat {
   private startedAt = -Infinity;
   private rolledAt = -Infinity;
   private impactPending = false;
+  private side: -1 | 1 = 1;
   private last: { x: number; y: number; at: number } | null = null;
   private direction: { x: number; y: number } | null = null;
   private travel = 0;
@@ -93,6 +94,9 @@ export class HeadPatSwat {
     if (now - this.rolledAt < SWAT_COOLDOWN_MS) return false;
     this.rolledAt = now; // Normal reactions also consume this roll's cooldown.
     if (random() >= normalizeSwatChance(this.chance)) return false;
+    // A separate draw keeps each paw at 50% for every configured chance.
+    // Keep this choice for the whole action, rather than rolling every frame.
+    this.side = random() < 0.5 ? -1 : 1;
     this.startedAt = now;
     this.impactPending = true;
     this.resetGesture();
@@ -117,7 +121,8 @@ export class HeadPatSwat {
     const smooth = u * u * (3 - 2 * u);
     const mix = (x: number, y: number) => x + (y - x) * smooth;
     return {
-      x: mix(a.x, b.x),
+      side: this.side,
+      x: this.side * mix(a.x, b.x),
       lift: mix(a.lift, b.lift),
       reach: mix(a.reach, b.reach),
       grip: mix(a.grip, b.grip),

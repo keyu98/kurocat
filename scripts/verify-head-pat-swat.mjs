@@ -75,16 +75,29 @@ try {
       if (!rows.length) throw Error("No head raycast row");
       return rows[Math.floor(rows.length / 2)];
     };
-    window.rub3 = () => {
+    window.rub3 = (side = 1) => {
       const { y, xs } = headLine();
       const a = xs[0],
         b = xs[xs.length - 1],
         m = (a + b) / 2;
-      for (const x of [a, m, b, m, a, m, b]) {
-        g.elapsed += 0.02;
-        g.onWindowCursor(x, y, true);
+      const random = Math.random;
+      // Exercise the real detector and side draw, deterministically for media.
+      Math.random = () => side < 0 ? 0 : 0.75;
+      try {
+        for (const x of [a, m, b, m, a, m, b]) {
+          g.elapsed += 0.02;
+          g.onWindowCursor(x, y, true);
+        }
+        return g.headPatSwat.isActive(g.elapsed * 1000);
+      } finally {
+        Math.random = random;
       }
-      return g.headPatSwat.isActive(g.elapsed * 1000);
+    };
+    window.scratchRowCenter = (canvas, row) => {
+      const pixels = canvas.getContext("2d").getImageData(0, row, 256, 1).data;
+      let sum = 0, count = 0;
+      for (let x = 0; x < 256; x++) if (pixels[x * 4 + 3] > 100) { sum += x; count++; }
+      return sum / count;
     };
   });
   checks.threeD = await page.evaluate(() => {
@@ -99,6 +112,8 @@ try {
     g.headPatSwat.startedAt = g.elapsed * 1000 - 180;
     g.update(0.016);
     out.pawMoves = g.paws.R.pos.distanceTo(raised) > 0.3;
+    out.rightSwatUsesRightPaw = g.headPatSwat.pose(g.elapsed * 1000).side === 1 &&
+      paw.root.position.distanceTo(g.paws.R.pos) < 1e-6 && paw.root.scale.x > 0;
     out.angryEyes = g.longhairModel.eyes.every(
       (eye) => eye.uniforms.uAnger.value > 0.9,
     );
@@ -154,6 +169,7 @@ try {
     }
     for (let i = 3; i < pixels.length; i += 4) if (pixels[i] > 100) opaque++;
     out.threeThinScratchTracks = tracks === 3 && opaque < 256 * 256 * 0.12;
+    out.rightScratchesSlantLeft = scratchRowCenter(canvas, 60) > scratchRowCenter(canvas, 200);
     window.scratchTexture = canvas.toDataURL("image/png");
     out.scratchesOutlastFist = !paw.root.visible && g.clawScratches.sprite.visible;
     for (let i = 0; i < 6; i++) g.update(0.05);
@@ -243,8 +259,38 @@ try {
     (await page.evaluate(() => window.scratchTexture)).split(",")[1], "base64",
   ));
   assert.deepEqual(Object.entries(checks.threeD).filter(([, value]) => !value), [], "3D render checks");
-  if (capture)
-    await page.evaluate(async () => {
+  checks.leftPaw = await page.evaluate(() => {
+    const out = {}, paw = g.longhairModel.swatPaw;
+    g.cancelHeadPatSwat();
+    g.headPatSwat.rolledAt = -Infinity;
+    out.leftGestureSelected = rub3(-1) && g.headPatSwat.pose(g.elapsed * 1000).side === -1;
+    g.lastMouse = g.elapsed;
+    g.headPatSwat.startedAt = g.elapsed * 1000 - 180;
+    g.update(0.033);
+    out.leftPawRaised = paw.root.position.distanceTo(g.paws.L.pos) < 1e-6 && g.paws.L.pos.x < 0;
+    out.rightPawNotHijacked = g.paws.R.pos.y < g.paws.L.pos.y - 0.4;
+    out.leftGripMirrored = paw.root.visible && paw.root.scale.x < 0;
+    out.leftSwatOverridesMouse = g.isMousing() && g.paws.L.pos.y > 1;
+    g.headPatSwat.startedAt = g.elapsed * 1000 - 410;
+    g.update(0.033);
+    out.leftClawTipsAndCuts = paw.claws.every((claw) => claw.visible) && g.clawScratches.sprite.visible;
+    for (let i = 0; i < 4; i++) g.update(0.033);
+    const canvas = g.clawScratches.sprite.material.map.image;
+    out.leftScratchesSlantRight = scratchRowCenter(canvas, 60) < scratchRowCenter(canvas, 200);
+    g.scene.updateMatrixWorld(true);
+    out.leftScratchesOnLeft = g.clawScratches.sprite.getWorldPosition(g.paws.L.pos.clone()).project(g.camera).x < 0;
+    for (let i = 0; i < 18; i++) { g.lastMouse = g.elapsed; g.update(0.05); }
+    out.leftReturnsToMouse = !paw.root.visible &&
+      g.paws.L.pos.distanceTo(g.desk.mouseTopWorld(g.paws.L.pos.clone())) < 0.25;
+    const hadScratches = g.clawScratches.sprite.visible;
+    g.setPrivacyMode(true);
+    out.privacyClearsLeftScratches = hadScratches && !g.clawScratches.sprite.visible;
+    g.setPrivacyMode(false);
+    return out;
+  });
+  assert.deepEqual(Object.entries(checks.leftPaw).filter(([, value]) => !value), [], "Left paw checks");
+  if (capture) for (const [label, side] of [["right", 1], ["left", -1]]) {
+    await page.evaluate(async (side) => {
       g.renderer.dispose();
       const previous = document.getElementById("cat");
       const canvas = document.createElement("canvas");
@@ -258,19 +304,19 @@ try {
       g.resize();
       g.update(0.016);
       g.renderer.render(g.scene, g.camera);
-      rub3();
-    });
-  if (capture)
+      rub3(side);
+    }, side);
     for (let i = 0; i < 80; i++) {
       await page.evaluate(() => {
         g.update(0.032);
         g.renderer.render(g.scene, g.camera);
       });
       await page.screenshot({
-        path: `${outputDir}/3d-${String(i).padStart(2, "0")}.png`,
+        path: `${outputDir}/3d-${label}-${String(i).padStart(2, "0")}.png`,
         omitBackground: true,
       });
     }
+  }
   const ui = await browser.newPage({ viewport: { width: 420, height: 440 } });
   const uiErrors = [];
   ui.on("pageerror", (error) => uiErrors.push(error.message));

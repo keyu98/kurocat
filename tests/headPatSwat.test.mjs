@@ -89,7 +89,7 @@ test("a normal outcome consumes the cooldown; continued motion cannot reroll eve
     }),
     true,
   );
-  assert.equal(rolls, 2);
+  assert.equal(rolls, 3); // One failed chance draw, then chance + paw selection.
 });
 
 test("anger covers the swat and the animation completes without restarting", () => {
@@ -166,4 +166,32 @@ test("the half-grip tightens as the raised paw punches forward and releases on r
   assert.ok(hit.reach > raised.reach + 0.9);
   assert.ok(recovery.grip < hit.grip);
   assert.equal(recovery.claws, 0);
+});
+
+test("a successful action chooses either paw at the 50% boundary and holds it throughout", () => {
+  for (const choice of [0, 0.499, 0.5, 0.999]) {
+    const s = new HeadPatSwat();
+    s.chance = 1;
+    const draws = [0.9, choice];
+    assert.equal(rub(s, 0, () => draws.shift()), true);
+    assert.equal(draws.length, 0);
+    const side = choice < 0.5 ? -1 : 1;
+    for (let age = 0; age < SWAT_DURATION_MS; age += 16) {
+      const pose = s.pose(100 + age);
+      assert.equal(pose.side, side);
+      assert.equal(Math.sign(pose.x), side);
+    }
+    assert.equal(s.move(20, 0, 250, true, () => assert.fail("must not choose again mid-action")), false);
+  }
+});
+
+test("paw selection is independent of the configured trigger chance and is skipped on a miss", () => {
+  const s = new HeadPatSwat(); // default total chance remains 25%
+  const draws = [0.249, 0.75];
+  assert.equal(rub(s, 0, () => draws.shift()), true);
+  assert.equal(s.pose(300).side, 1, "a low chance must still allow the right paw");
+  const missed = new HeadPatSwat();
+  let rolls = 0;
+  assert.equal(rub(missed, 0, () => { rolls++; return 0.25; }), false);
+  assert.equal(rolls, 1, "a normal reaction must not draw a paw");
 });
