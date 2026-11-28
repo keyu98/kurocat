@@ -1,4 +1,5 @@
 import './style.css';
+import { normalizeSwatChance } from './headPatSwat';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { DEFAULT_TAIL_KEY_IDS, type KeyboardOrientation, type TailKeyMode } from './catEngine';
@@ -27,6 +28,7 @@ interface AppSettings {
   obsHidePet: boolean;
   renderMode?: '2d' | '3d';
   collarColor?: 'none' | 'red' | 'blue' | 'pink' | 'green';
+  headPatSwatChance?: number;
   headphoneMode?: 'auto' | 'on' | 'off';
 }
 
@@ -242,6 +244,14 @@ function syncUI(): void {
   if (collarRowEl) {
     collarRowEl.classList.toggle('hidden', renderMode === '2d' || settings.catBreed === 'dafeiyu');
   }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-swatchance]').forEach((btn) => {
+    const active = Number(btn.dataset.swatchance) === normalizeSwatChance(settings.headPatSwatChance);
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', String(active));
+  });
+  const swatRow = document.getElementById('swat-chance-row');
+  swatRow?.classList.toggle('hidden', settings.catBreed === 'dafeiyu');
 
   const headphoneMode =
     settings.headphoneMode === 'auto' || settings.headphoneMode === 'on'
@@ -484,9 +494,14 @@ async function bootstrap(): Promise<void> {
     }
 
     const target = (e.target as HTMLElement).closest<HTMLElement>(
-      '[data-action], [data-breed], [data-rendermode], [data-collar], [data-headphonemode], [data-kblayout], [data-kborient], [data-tailmode]',
+      '[data-action], [data-breed], [data-rendermode], [data-collar], [data-headphonemode], [data-swatchance], [data-kblayout], [data-kborient], [data-tailmode]',
     );
     if (!target) return;
+
+    if (target.dataset.swatchance !== undefined) {
+      void applySettingsPatch({ headPatSwatChance: normalizeSwatChance(Number(target.dataset.swatchance)) });
+      return;
+    }
 
     const headphoneAttr = target.dataset.headphonemode;
     if (headphoneAttr === 'auto' || headphoneAttr === 'on' || headphoneAttr === 'off') {

@@ -343,6 +343,7 @@ fn update_settings(app: AppHandle, state: State<'_, AppState>, mut patch: AppSet
     patch.render_mode = config::normalize_render_mode(&patch.render_mode);
     patch.collar_color = config::normalize_collar_color(&patch.collar_color);
     patch.headphone_mode = config::normalize_headphone_mode(&patch.headphone_mode);
+    patch.head_pat_swat_chance = config::normalize_head_pat_swat_chance(patch.head_pat_swat_chance);
 
     let (prev_autostart, prev_scale, prev_layout, prev_obs_hide) = {
         let s = state.settings.lock().unwrap();

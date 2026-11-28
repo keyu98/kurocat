@@ -1,4 +1,5 @@
 import './style.css';
+import { normalizeSwatChance } from './headPatSwat';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -44,6 +45,7 @@ interface AppSettings {
   obsHidePet?: boolean;
   renderMode?: DesktopRenderMode;
   collarColor?: CollarColorId;
+  headPatSwatChance?: number;
   headphoneMode?: HeadphoneMode;
 }
 
@@ -225,6 +227,7 @@ function syncEngine3DState(): void {
       ? settings.collarColor
       : 'none';
 
+  engine3d.setHeadPatSwatChance(settings.headPatSwatChance);
   engine3d.showKeyBubbles = settings.showKeyBubbles;
   engine3d.setRenderStyle('3d');
   if (activeCat) {
@@ -379,6 +382,14 @@ function syncMenuUI(): void {
     collarRowEl.classList.toggle('hidden', renderMode === '2d' || settings.catBreed === 'dafeiyu');
   }
 
+  document.querySelectorAll<HTMLButtonElement>('[data-swatchance]').forEach((btn) => {
+    const active = Number(btn.dataset.swatchance) === normalizeSwatChance(settings.headPatSwatChance);
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', String(active));
+  });
+  const swatRow = document.getElementById('swat-chance-row');
+  swatRow?.classList.toggle('hidden', settings.catBreed === 'dafeiyu');
+
   const headphoneMode: HeadphoneMode =
     settings.headphoneMode === 'auto' || settings.headphoneMode === 'on'
       ? settings.headphoneMode
@@ -398,6 +409,7 @@ function syncMenuUI(): void {
     headerEl.style.color = activeCat.accentColor || '#c8f538';
   }
 
+  engine.setHeadPatSwatChance(settings.headPatSwatChance);
   engine.showKeyBubbles = settings.showKeyBubbles;
   engine.setCatAppearance(activeCat?.id || 'black', activeCat);
   engine.setHeadphones(shouldWearHeadphonesNow());
@@ -1151,9 +1163,14 @@ async function bootstrap(): Promise<void> {
 
   menuEl.addEventListener('click', (e) => {
     const target = (e.target as HTMLElement).closest<HTMLElement>(
-      '[data-action], [data-scale], [data-breed], [data-rendermode], [data-collar], [data-headphonemode], [data-kblayout], [data-kborient], [data-tailmode]',
+      '[data-action], [data-scale], [data-breed], [data-rendermode], [data-collar], [data-headphonemode], [data-swatchance], [data-kblayout], [data-kborient], [data-tailmode]',
     );
     if (!target) return;
+
+    if (target.dataset.swatchance !== undefined) {
+      void applySettingsPatch({ headPatSwatChance: normalizeSwatChance(Number(target.dataset.swatchance)) });
+      return;
+    }
 
     const headphoneAttr = target.dataset.headphonemode;
     if (headphoneAttr === 'auto' || headphoneAttr === 'on' || headphoneAttr === 'off') {

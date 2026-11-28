@@ -22,6 +22,7 @@ interface ObsAppSettings {
   tailKeyIds?: string[];
   renderMode?: ObsRenderMode;
   collarColor?: CollarColorId;
+  headPatSwatChance?: number;
   headphoneMode?: ObsHeadphoneMode;
 }
 
@@ -138,6 +139,7 @@ function syncObs3D(
   }
 
   if (engine3d) {
+    engine3d.setHeadPatSwatChance(currentSettings.headPatSwatChance);
     engine3d.showKeyBubbles = showBubbles;
     engine3d.setRenderStyle('3d');
     if (activeCat) engine3d.setCatSkin(activeCat);
@@ -204,6 +206,7 @@ function applyState(): void {
       : 'none');
 
   engine.showKeyBubbles = showBubbles;
+  engine.setHeadPatSwatChance(currentSettings.headPatSwatChance);
   engine.setCatAppearance(activeCat?.id || 'black', activeCat);
   engine.setHeadphones(computeObsHeadphonesOn(activeCat));
   engine.setKeyboardConfig(layout, orient);

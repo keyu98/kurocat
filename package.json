@@ -5,6 +5,8 @@
   "description": "Adorable transparent black cat desktop typing & mouse companion for Windows and macOS",
   "type": "module",
   "scripts": {
+    "test:swat": "node --test tests/headPatSwat.test.mjs",
+    "test:swat:browser": "node scripts/verify-head-pat-swat.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "build:web": "vite build --config vite.web.config.ts",
@@ -24,6 +26,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.2.7",
     "@types/three": "^0.187.0",
+    "playwright": "1.65.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.7"
   }
