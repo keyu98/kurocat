@@ -132,12 +132,12 @@ try {
       return count;
     };
     return {
-      rightCoatOrangePixels: countOrange(518, 390, 26, 100),
+      tailRootOrangePixels: countOrange(518, 390, 26, 100),
       tailOrangePixels: countOrange(600, 315, 80, 120),
     };
   });
   if (!values['record-before']) {
-    assert.equal(frontMarkings.rightCoatOrangePixels, 0, `front right coat: ${JSON.stringify(frontMarkings)}`);
+    assert.ok(frontMarkings.tailRootOrangePixels > 0, `orange tail root: ${JSON.stringify(frontMarkings)}`);
     assert.ok(frontMarkings.tailOrangePixels > 1000, `orange tail: ${JSON.stringify(frontMarkings)}`);
   }
 
@@ -175,7 +175,7 @@ try {
     const probes = {};
     for (const [name, x, y] of [
       ['shoulder-center', 0, 0.52], ['shoulder-left', -0.30, 0.50], ['shoulder-right', 0.30, 0.50],
-      ['spine-upper', 0, 0.26], ['spine-middle', 0, -0.08], ['spine-lower', 0, -0.42],
+      ['upper-back-center', 0, 0.26], ['spine-middle', 0, -0.08], ['spine-lower', 0, -0.42],
       ['flank-left', -0.67, -0.04], ['flank-right', 0.67, -0.04],
       ['hip-left', -0.58, -0.57], ['hip-right', 0.58, -0.57], ['rump', 0, -0.83],
     ]) {
@@ -197,9 +197,9 @@ try {
     return probes;
   });
   if (!values['record-before']) {
+    const orangeProbes = new Set(['shoulder-center', 'shoulder-right', 'upper-back-center', 'flank-right', 'hip-right']);
     for (const [name, probe] of Object.entries(probes)) {
-      const expectedOrange = name.startsWith('shoulder') || name.startsWith('spine');
-      assert.equal(probe.orange, expectedOrange, `${name}: ${JSON.stringify(probe)}`);
+      assert.equal(probe.orange, orangeProbes.has(name), `${name}: ${JSON.stringify(probe)}`);
       assert.equal(probe.rgba[3], 255, `${name}: coat must remain opaque`);
     }
   }

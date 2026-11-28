@@ -192,7 +192,7 @@ function makeCoatGeometry(
   return geometry;
 }
 
-function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID' | 'TAIL'): THREE.ShaderMaterial {
+function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     defines: { [part]: 1 },
     uniforms: {
@@ -221,10 +221,6 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID' | 'TAIL'): THREE
       #endif
       varying vec3 vLocation, vNormal, vView;
       varying vec2 vWorldXY;
-      #ifdef TAIL
-        attribute float along;
-        varying float vAlong;
-      #endif
       void main() {
         vec4 posed = vec4(position, 1.0);
         vec3 posedNormal = normal;
@@ -240,9 +236,6 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID' | 'TAIL'): THREE
           posedNormal = mix(mat3(uTorsoPose) * normal, mat3(uHeadPose) * normal, bend);
         #else
           vLocation = position;
-        #endif
-        #ifdef TAIL
-          vAlong = along;
         #endif
         vWorldXY = (modelMatrix * posed).xy;
         vNormal = normalMatrix * posedNormal;
@@ -260,9 +253,6 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID' | 'TAIL'): THREE
       #endif
       varying vec3 vLocation, vNormal, vView;
       varying vec2 vWorldXY;
-      #ifdef TAIL
-        varying float vAlong;
-      #endif
 
       float oval(vec2 p, vec2 center, vec2 size) {
         return 1.0 - smoothstep(0.89, 1.05, length((p - center) / size));
@@ -332,27 +322,25 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID' | 'TAIL'): THREE
           p = vLocation;
           color = uCream;
 
-          // Facai's white coat has broad ginger shoulders flowing into a narrow
-          // spinal patch, ending above the white rump. Work in rest coordinates
-          // so the markings stay attached during breathing, sleep and swats.
-          float spine = 0.025 + 0.026 * sin(4.7 * p.y + 0.3) + 0.012 * sin(11.0 * p.y);
-          float side = sign(p.x - spine);
-          float shoulder = smoothstep(0.18, 0.62, p.y);
-          float width = mix(0.235 + 0.030 * sin(8.0 * p.y - 0.6), 0.59, shoulder);
-          width *= smoothstep(-0.72, -0.43, p.y);
-          // Unequal locks of long fur break up both edges at several scales.
-          // Their tips lean down the back instead of forming a geometric oval.
-          float flow = p.y + 0.20 * abs(p.x - spine);
-          float locks = 0.023 * sin(19.0 * flow + side * 1.7)
-                      + 0.012 * sin(43.0 * flow - side * 0.8);
-          float patchEdge = abs(p.x - spine) - width - locks;
-          // Fine, lengthwise wisps soften the border into the surrounding white.
-          float fibers = sin(235.0 * (p.x - spine) + 17.0 * p.y + 0.8 * sin(23.0 * p.y));
-          float feather = 0.039 + 0.011 * sin(37.0 * flow + side);
-          float backPatch = (1.0 - smoothstep(-feather, feather, patchEdge + 0.018 * fibers))
-                          * smoothstep(-0.74, -0.66, p.y)
-                          * smoothstep(0.10, 0.34, -p.z);
-          color = mix(color, uFlank, backPatch);
+          // The reference has a white spine between an asymmetric shoulder patch
+          // and a rear flank patch that joins the ginger tail. Rest coordinates
+          // keep both markings attached during breathing, sleep and swats.
+          float side = sign(p.x);
+          float flow = p.y + 0.18 * abs(p.x);
+          float locks = 0.024 * sin(19.0 * flow + side * 1.7)
+                      + 0.013 * sin(43.0 * flow - side * 0.8);
+          float fibers = sin(235.0 * p.x + 17.0 * p.y + 0.8 * sin(23.0 * p.y));
+          float raggedEdge = locks * 1.5 + 0.018 * fibers;
+          vec2 shoulder = vec2(p.x - 0.27 + 0.035 * sin(7.0 * p.y), (p.y - 0.50) * 0.92);
+          float shoulderPatch = 1.0 - smoothstep(-0.10, 0.08,
+            length(shoulder / vec2(0.52, 0.32)) - 1.0 + raggedEdge);
+          vec2 rear = vec2(p.x - 0.44 + 0.04 * sin(6.0 * p.y),
+                           p.y + 0.30 - 0.45 * (p.x - 0.44));
+          float rearPatch = 1.0 - smoothstep(-0.10, 0.08,
+            length(rear / vec2(0.36, 0.48)) - 1.0 + raggedEdge);
+          float shoulderCoat = shoulderPatch * smoothstep(-0.20, 0.10, -p.z);
+          float rearCoat = rearPatch * smoothstep(0.02, 0.30, -p.z);
+          color = mix(color, uFlank, max(shoulderCoat, rearCoat) * (1.0 - vHeadMix));
 
           // The broad ivory bib ends in a few rounded, downward locks.
           float bibEdge = -0.26 + 0.84 * abs(p.x) + 0.051 * cos(p.x * 23.0);
@@ -377,8 +365,6 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID' | 'TAIL'): THREE
           color = mix(color, uGinger, inner * 0.95);
           float tuftEdge = 0.125 + 0.012 * sin(90.0 * p.x);
           color = mix(color, uRuff, inner * (1.0 - smoothstep(tuftEdge - 0.013, tuftEdge + 0.010, p.y)) * 0.83);
-        #elif defined(TAIL)
-          color = mix(uRuff, color, smoothstep(0.12, 0.28, vAlong));
         #endif
 
         // Broad studio key, warm bounce and a soft edge give the matte sculpt volume.
@@ -589,8 +575,7 @@ export class LonghairModel3D {
   public readonly head = new THREE.Group();
   public readonly ears: THREE.Group[] = [];
   public readonly hitMeshes: THREE.Mesh[];
-  public readonly tailMaterial = sculptMaterial('TAIL');
-  public readonly tailCapMaterial = sculptMaterial('SOLID');
+  public readonly tailMaterial = sculptMaterial('SOLID');
   public readonly limbMaterial = sculptMaterial('LIMB');
   public readonly swatPaw = new LonghairSwatPaw3D(this.limbMaterial);
   public readonly forelegs = [
@@ -712,8 +697,6 @@ export class LonghairModel3D {
     setCoatColors(this.earCoat, skin.earOuterColor ?? ginger, innerEar, innerEar, skin.earTuftColor ?? skin.furColor);
     setCoatColors(this.noseCoat, skin.noseColor ?? '#df8781');
     setCoatColors(this.tailMaterial, skin.tailColor ?? ginger);
-    this.tailMaterial.uniforms.uRuff.value.set(ruff);
-    setCoatColors(this.tailCapMaterial, skin.tailColor ?? ginger);
     for (const eye of this.eyes) {
       eye.uniforms.uTop.value.set(skin.eyeColorTop);
       eye.uniforms.uBottom.value.set(skin.eyeColorBottom ?? '#eec268');
