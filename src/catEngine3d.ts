@@ -103,6 +103,7 @@ function createCleanLimb(
     segments: number;
     radial: number;
     fill: THREE.Material;
+    capFill?: THREE.Material;
     order?: number;
     capStart?: boolean;
     capEnd?: boolean;
@@ -117,7 +118,7 @@ function createCleanLimb(
   if (opts.capStart !== false) capTs.push(0);
   if (opts.capEnd !== false) capTs.push(1);
   for (let i = 0; i < capTs.length; i++) {
-    const cap = new THREE.Mesh(CAP_GEO, opts.fill);
+    const cap = new THREE.Mesh(CAP_GEO, opts.capFill ?? opts.fill);
     cap.renderOrder = order;
     parent.add(cap);
     caps.push(cap);
@@ -1634,6 +1635,7 @@ export class KuroCatEngine3D {
           segments: 38,
           radial: 16,
           fill: model.tailMaterial,
+          capFill: model.tailCapMaterial,
           capStart: false,
         });
         this.longhairModel = model;

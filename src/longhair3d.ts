@@ -192,7 +192,7 @@ function makeCoatGeometry(
   return geometry;
 }
 
-function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMaterial {
+function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID' | 'TAIL'): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     defines: { [part]: 1 },
     uniforms: {
@@ -221,6 +221,10 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
       #endif
       varying vec3 vLocation, vNormal, vView;
       varying vec2 vWorldXY;
+      #ifdef TAIL
+        attribute float along;
+        varying float vAlong;
+      #endif
       void main() {
         vec4 posed = vec4(position, 1.0);
         vec3 posedNormal = normal;
@@ -236,6 +240,9 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
           posedNormal = mix(mat3(uTorsoPose) * normal, mat3(uHeadPose) * normal, bend);
         #else
           vLocation = position;
+        #endif
+        #ifdef TAIL
+          vAlong = along;
         #endif
         vWorldXY = (modelMatrix * posed).xy;
         vNormal = normalMatrix * posedNormal;
@@ -253,6 +260,9 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
       #endif
       varying vec3 vLocation, vNormal, vView;
       varying vec2 vWorldXY;
+      #ifdef TAIL
+        varying float vAlong;
+      #endif
 
       float oval(vec2 p, vec2 center, vec2 size) {
         return 1.0 - smoothstep(0.89, 1.05, length((p - center) / size));
@@ -367,6 +377,8 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
           color = mix(color, uGinger, inner * 0.95);
           float tuftEdge = 0.125 + 0.012 * sin(90.0 * p.x);
           color = mix(color, uRuff, inner * (1.0 - smoothstep(tuftEdge - 0.013, tuftEdge + 0.010, p.y)) * 0.83);
+        #elif defined(TAIL)
+          color = mix(uRuff, color, smoothstep(0.12, 0.28, vAlong));
         #endif
 
         // Broad studio key, warm bounce and a soft edge give the matte sculpt volume.
@@ -577,7 +589,8 @@ export class LonghairModel3D {
   public readonly head = new THREE.Group();
   public readonly ears: THREE.Group[] = [];
   public readonly hitMeshes: THREE.Mesh[];
-  public readonly tailMaterial = sculptMaterial('SOLID');
+  public readonly tailMaterial = sculptMaterial('TAIL');
+  public readonly tailCapMaterial = sculptMaterial('SOLID');
   public readonly limbMaterial = sculptMaterial('LIMB');
   public readonly swatPaw = new LonghairSwatPaw3D(this.limbMaterial);
   public readonly forelegs = [
@@ -699,6 +712,8 @@ export class LonghairModel3D {
     setCoatColors(this.earCoat, skin.earOuterColor ?? ginger, innerEar, innerEar, skin.earTuftColor ?? skin.furColor);
     setCoatColors(this.noseCoat, skin.noseColor ?? '#df8781');
     setCoatColors(this.tailMaterial, skin.tailColor ?? ginger);
+    this.tailMaterial.uniforms.uRuff.value.set(ruff);
+    setCoatColors(this.tailCapMaterial, skin.tailColor ?? ginger);
     for (const eye of this.eyes) {
       eye.uniforms.uTop.value.set(skin.eyeColorTop);
       eye.uniforms.uBottom.value.set(skin.eyeColorBottom ?? '#eec268');

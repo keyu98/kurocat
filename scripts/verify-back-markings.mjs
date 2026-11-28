@@ -118,6 +118,29 @@ try {
     ['back', 165, 24.5], ['high-back', 165, 58], ['back-center', 180, 18],
   ]) await capture(name, az, el);
 
+  const frontMarkings = await page.evaluate(() => {
+    reset();
+    view(0, 24.5);
+    const gl = g.renderer.getContext();
+    const countOrange = (x, y, width, height) => {
+      const pixels = new Uint8Array(width * height * 4);
+      gl.readPixels(x, gl.drawingBufferHeight - y - height, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      let count = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (pixels[i + 3] === 255 && pixels[i] - pixels[i + 2] > 65 && pixels[i] - pixels[i + 1] > 35) count++;
+      }
+      return count;
+    };
+    return {
+      rightCoatOrangePixels: countOrange(518, 390, 26, 100),
+      tailOrangePixels: countOrange(600, 315, 80, 120),
+    };
+  });
+  if (!values['record-before']) {
+    assert.equal(frontMarkings.rightCoatOrangePixels, 0, `front right coat: ${JSON.stringify(frontMarkings)}`);
+    assert.ok(frontMarkings.tailOrangePixels > 1000, `orange tail: ${JSON.stringify(frontMarkings)}`);
+  }
+
   for (const side of values['stills-only'] ? [] : [-1, 1]) {
     await page.evaluate((side) => { reset(); swat(side); }, side);
     for (let frame = 0; frame < 25; frame++) {
@@ -181,9 +204,9 @@ try {
     }
   }
   assert.deepEqual(errors, []);
-  const report = { sourceRef: values['source-ref'] ?? 'working-tree', captures: Object.keys(alpha).length, probes, alpha, errors };
+  const report = { sourceRef: values['source-ref'] ?? 'working-tree', captures: Object.keys(alpha).length, frontMarkings, probes, alpha, errors };
   writeFileSync(`${output}/results.json`, JSON.stringify(report, null, 2));
-  console.log(JSON.stringify({ captures: report.captures, probes, errors }, null, 2));
+  console.log(JSON.stringify({ captures: report.captures, frontMarkings, probes, errors }, null, 2));
 } finally {
   await browser?.close();
   await server.close();
