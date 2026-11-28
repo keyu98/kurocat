@@ -7,6 +7,7 @@
   "scripts": {
     "test:swat": "node --test tests/headPatSwat.test.mjs",
     "test:swat:browser": "node scripts/verify-head-pat-swat.mjs",
+    "test:back-markings": "node scripts/verify-back-markings.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "build:web": "vite build --config vite.web.config.ts",

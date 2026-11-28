@@ -322,21 +322,27 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
           p = vLocation;
           color = uCream;
 
-          // The saddle and rump wrap around the back, with uneven patches visible on the flanks.
-          float wrap = smoothstep(0.25, 0.49, -p.z + 0.31 * abs(p.x));
-          float saddle = oval(vec2(p.x, p.y + 0.10 * sin(3.0 * p.x)),
-                              vec2(0.05, 0.27), vec2(1.20, 0.48));
-          float rump = oval(p.xy, vec2(-0.23, -0.66), vec2(0.93, 0.35));
-          float leftFlank = oval(vec2(p.x + 0.071 * sin(p.y * 4.0), p.y + 0.14 * p.z),
-                                 vec2(-0.88, 0.04), vec2(0.35, 0.69));
-          float rightFlank = oval(vec2(p.x - 0.067 * sin(p.y * 4.0), p.y - 0.10 * p.z),
-                                  vec2(0.92, -0.06), vec2(0.32, 0.60));
-          float sidePatch = max(leftFlank, rightFlank) * (1.0 - smoothstep(0.42, 0.72, p.z));
-          float nape = oval(vec2(p.x + 0.045 * sin(p.y * 13.0), p.y),
-                            vec2(0.085, 0.81), vec2(0.69, 0.51))
-                       * (1.0 - smoothstep(-0.31, -0.025, vFace.z));
-          float backPatch = max(nape, max(saddle, rump) * wrap);
-          color = mix(color, uFlank, max(backPatch, sidePatch));
+          // Facai's white coat has broad ginger shoulders flowing into a narrow
+          // spinal patch, ending above the white rump. Work in rest coordinates
+          // so the markings stay attached during breathing, sleep and swats.
+          float spine = 0.025 + 0.026 * sin(4.7 * p.y + 0.3) + 0.012 * sin(11.0 * p.y);
+          float side = sign(p.x - spine);
+          float shoulder = smoothstep(0.18, 0.62, p.y);
+          float width = mix(0.235 + 0.030 * sin(8.0 * p.y - 0.6), 0.59, shoulder);
+          width *= smoothstep(-0.72, -0.43, p.y);
+          // Unequal locks of long fur break up both edges at several scales.
+          // Their tips lean down the back instead of forming a geometric oval.
+          float flow = p.y + 0.20 * abs(p.x - spine);
+          float locks = 0.023 * sin(19.0 * flow + side * 1.7)
+                      + 0.012 * sin(43.0 * flow - side * 0.8);
+          float patchEdge = abs(p.x - spine) - width - locks;
+          // Fine, lengthwise wisps soften the border into the surrounding white.
+          float fibers = sin(235.0 * (p.x - spine) + 17.0 * p.y + 0.8 * sin(23.0 * p.y));
+          float feather = 0.039 + 0.011 * sin(37.0 * flow + side);
+          float backPatch = (1.0 - smoothstep(-feather, feather, patchEdge + 0.018 * fibers))
+                          * smoothstep(-0.74, -0.66, p.y)
+                          * smoothstep(0.10, 0.34, -p.z);
+          color = mix(color, uFlank, backPatch);
 
           // The broad ivory bib ends in a few rounded, downward locks.
           float bibEdge = -0.26 + 0.84 * abs(p.x) + 0.051 * cos(p.x * 23.0);
