@@ -334,12 +334,13 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
           vec2 shoulder = vec2(p.x - 0.27 + 0.035 * sin(7.0 * p.y), (p.y - 0.50) * 0.92);
           float shoulderPatch = 1.0 - smoothstep(-0.10, 0.08,
             length(shoulder / vec2(0.52, 0.32)) - 1.0 + raggedEdge);
+          float frontShoulderPatch = shoulderPatch;
           vec2 shoulderOpposite = vec2(p.x + 0.30 + 0.030 * sin(8.0 * p.y), (p.y - 0.48) * 0.92);
           float shoulderOppositePatch = 1.0 - smoothstep(-0.10, 0.08,
             length(shoulderOpposite / vec2(0.46, 0.30)) - 1.0 + raggedEdge);
           shoulderPatch = max(shoulderPatch, shoulderOppositePatch);
-          vec2 rear = vec2(p.x - 0.44 + 0.04 * sin(6.0 * p.y),
-                           p.y + 0.30 - 0.45 * (p.x - 0.44));
+          vec2 rear = vec2(p.x + 0.44 + 0.04 * sin(6.0 * p.y),
+                           p.y + 0.30 + 0.45 * (p.x + 0.44));
           float rearPatch = 1.0 - smoothstep(-0.10, 0.08,
             length(rear / vec2(0.36, 0.48)) - 1.0 + raggedEdge);
           float spine = 0.025 + 0.026 * sin(4.7 * p.y + 0.3) + 0.012 * sin(11.0 * p.y);
@@ -364,9 +365,12 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
           float folds = max(furLock(lock, vec2(0.105, 0.54), vec2(0.252, -0.13), -0.073, 0.062),
                             furLock(lock, vec2(0.287, 0.61), vec2(0.480, 0.05), -0.043, 0.053));
           color *= 1.0 - 0.080 * folds * smoothstep(0.46, 0.87, p.z);
-          float frontShoulder = shoulderPatch * smoothstep(0.06, 0.34, p.z)
+          float frontShoulder = frontShoulderPatch * smoothstep(0.06, 0.34, p.z)
                               * smoothstep(0.55, 0.75, abs(p.x));
           color = mix(color, uFlank, frontShoulder * 0.60 * (1.0 - vHeadMix));
+          float frontRear = rearPatch * smoothstep(0.06, 0.34, p.z)
+                          * smoothstep(0.54, 0.74, abs(p.x));
+          color = mix(color, uFlank, frontRear * 0.45 * (1.0 - vHeadMix));
           color = mix(color, faceColor, vHeadMix);
         #elif defined(EAR)
           vec3 p = vLocation;
