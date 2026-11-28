@@ -340,9 +340,10 @@ fn update_settings(app: AppHandle, state: State<'_, AppState>, mut patch: AppSet
     patch.keyboard_orientation = normalize_keyboard_orientation(&patch.keyboard_orientation);
     patch.tail_key_mode = normalize_tail_key_mode(&patch.tail_key_mode);
     patch.tail_key_ids = normalize_tail_key_ids(&patch.tail_key_ids);
-    patch.render_mode = config::normalize_render_mode(&patch.render_mode);
+    patch.render_mode = config::normalize_cat_render_mode(&patch.render_mode, &patch.cat_breed);
     patch.collar_color = config::normalize_collar_color(&patch.collar_color);
     patch.headphone_mode = config::normalize_headphone_mode(&patch.headphone_mode);
+    patch.head_pat_swat_chance = config::normalize_head_pat_swat_chance(patch.head_pat_swat_chance);
 
     let (prev_autostart, prev_scale, prev_layout, prev_obs_hide) = {
         let s = state.settings.lock().unwrap();

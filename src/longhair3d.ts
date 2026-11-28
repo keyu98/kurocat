@@ -415,6 +415,8 @@ function eyeMaterial(): THREE.ShaderMaterial {
     depthWrite: false,
     uniforms: {
       uOpen: { value: 1 },
+      uAnger: { value: 0 },
+      uSide: { value: 1 },
       uGaze: { value: new THREE.Vector2() },
       uTop: { value: new THREE.Color() },
       uBottom: { value: new THREE.Color() },
@@ -429,6 +431,7 @@ function eyeMaterial(): THREE.ShaderMaterial {
     `,
     fragmentShader: `
       uniform float uOpen;
+      uniform float uAnger, uSide;
       uniform vec2 uGaze;
       uniform vec3 uTop, uBottom, uPupil;
       varying vec2 vUv;
@@ -452,7 +455,7 @@ function eyeMaterial(): THREE.ShaderMaterial {
           float lowerGlow = smoothstep(0.05, 0.82, -p.y) * (1.0 - smoothstep(0.65, 0.94, r));
           amber = mix(amber, min(amber * 1.20 + 0.04, vec3(1.0)), lowerGlow * 0.45);
           color = mix(amber, amber * 0.53, smoothstep(0.83, 0.98, r) * 0.55);
-          float pupilR = length((p - uGaze) / vec2(0.55, 0.67));
+          float pupilR = length((p - uGaze) / vec2(mix(0.55, 0.28, uAnger), 0.67));
           float pupilAA = max(0.023, fwidth(pupilR) * 0.58);
           float pupil = (1.0 - smoothstep(1.0 - pupilAA, 1.0 + pupilAA, pupilR))
                         * (1.0 - smoothstep(0.90, 0.97, r));
@@ -460,12 +463,107 @@ function eyeMaterial(): THREE.ShaderMaterial {
           float glint = 1.0 - smoothstep(0.145, 0.190, length(p - vec2(-0.28, 0.32) - uGaze * 0.44));
           float reflection = 1.0 - smoothstep(0.058, 0.090, length(p - vec2(0.27, -0.30) - uGaze * 0.34));
           color = mix(color, vec3(1.0, 0.97, 0.87), max(glint, reflection * 0.94));
+          // Slanted upper lids descend toward the nose. Fur shows through
+          // above the lid, while a dark rim makes the scowl readable at pet size.
+          float lid = mix(1.18, 0.16, uAnger) + uSide * p.x * 0.38 * uAnger;
+          float lidDist = p.y - lid;
+          alpha *= 1.0 - smoothstep(-aa, aa, lidDist);
+          color = mix(color, uPupil, smoothstep(-0.10, -0.02, lidDist) * uAnger * 0.82);
         }
         gl_FragColor = vec4(color, alpha);
         #include <colorspace_fragment>
       }
     `,
   });
+}
+
+// Keep the interaction paw in the character's material system: ivory foreleg
+// shading, low relief pads and small matte claw tips, without accessory gloss.
+class LonghairSwatPaw3D {
+  public readonly root = new THREE.Group();
+  public readonly toes: THREE.Group[] = [];
+  public readonly claws: THREE.Mesh[] = [];
+  public readonly padMaterial = sculptMaterial('SOLID');
+  private readonly clawMaterial = sculptMaterial('SOLID');
+
+  constructor(public readonly furMaterial: THREE.ShaderMaterial) {
+    const sphere = new THREE.SphereGeometry(1, 24, 16);
+    const part = (material: THREE.Material, pos: number[], size: number[]) => {
+      const mesh = new THREE.Mesh(sphere, material);
+      mesh.position.set(pos[0], pos[1], pos[2]);
+      mesh.scale.set(size[0], size[1], size[2]);
+      return mesh;
+    };
+    this.root.add(part(furMaterial, [0, -0.025, 0], [0.127, 0.118, 0.080]));
+
+    // A shallow, three-lobed metacarpal pad follows the palm's curvature.
+    const pad = new THREE.Shape();
+    pad.moveTo(0, 0.028);
+    pad.bezierCurveTo(-0.019, 0.044, -0.032, 0.019, -0.049, -0.003);
+    pad.bezierCurveTo(-0.067, -0.030, -0.042, -0.046, -0.021, -0.034);
+    pad.quadraticCurveTo(0, -0.044, 0.021, -0.034);
+    pad.bezierCurveTo(0.042, -0.046, 0.067, -0.030, 0.049, -0.003);
+    pad.bezierCurveTo(0.032, 0.019, 0.019, 0.044, 0, 0.028);
+    const padGeo = new THREE.ExtrudeGeometry(pad, {
+      depth: 0.002, bevelEnabled: true, bevelThickness: 0.003,
+      bevelSize: 0.004, bevelSegments: 3, curveSegments: 10,
+    });
+    const pos = padGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i) - 0.016;
+      pos.setZ(i, pos.getZ(i) - 0.03 * ((x / 0.127) ** 2 + (y / 0.118) ** 2));
+    }
+    padGeo.computeVertexNormals();
+    const palmPad = new THREE.Mesh(padGeo, this.padMaterial);
+    palmPad.position.set(0, -0.041, 0.079);
+    this.root.add(palmPad);
+
+    const clawCurve = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(0, 0.058, 0.075),
+      new THREE.Vector3(0, 0.030, 0.154),
+      new THREE.Vector3(0, -0.009, 0.128),
+    );
+    const claw = new TaperTube3D(10, 6, this.clawMaterial);
+    claw.update((t, out) => clawCurve.getPoint(t, out), (t) => 0.0055 * (1 - t) + 0.0004);
+    for (let i = 0; i < 4; i++) {
+      const x = (i - 1.5) * 0.055;
+      const edge = i === 0 || i === 3;
+      const toe = new THREE.Group();
+      toe.position.set(x, edge ? 0.041 : 0.054, 0.020);
+      toe.add(
+        part(furMaterial, [0, 0.035, 0.010], [0.041, 0.064, 0.046]),
+        part(this.padMaterial, [0, 0.049, 0.053], [0.023, 0.026, 0.005]),
+      );
+      this.toes.push(toe);
+      this.root.add(toe);
+      const tip = new THREE.Mesh(claw.mesh.geometry, this.clawMaterial);
+      tip.position.set(x, edge ? -0.011 : 0, 0);
+      tip.visible = false;
+      this.claws.push(tip);
+      this.root.add(tip);
+    }
+    this.root.visible = false;
+  }
+
+  public setSkin(skin: CatSkinConfig): void {
+    const pad = new THREE.Color(skin.noseColor ?? '#e9999b')
+      .lerp(new THREE.Color(skin.pawOutlineColor ?? '#b59b82'), 0.22);
+    setCoatColors(this.padMaterial, `#${pad.getHexString()}`);
+    setCoatColors(this.clawMaterial, skin.earTuftColor ?? '#fff4df');
+  }
+
+  public pose(grip: number, claws: number): void {
+    for (const toe of this.toes) toe.rotation.x = 0.65 + grip * 1.45;
+    for (const claw of this.claws) {
+      claw.visible = claws > 0.01;
+      claw.scale.setScalar(claws);
+    }
+  }
+
+  public contactPoint(out: THREE.Vector3): THREE.Vector3 {
+    // Mean of the four curved claw tips at full extension.
+    return this.root.localToWorld(out.set(0, -0.0145, 0.128));
+  }
 }
 
 export class LonghairModel3D {
@@ -475,6 +573,7 @@ export class LonghairModel3D {
   public readonly hitMeshes: THREE.Mesh[];
   public readonly tailMaterial = sculptMaterial('SOLID');
   public readonly limbMaterial = sculptMaterial('LIMB');
+  public readonly swatPaw = new LonghairSwatPaw3D(this.limbMaterial);
   public readonly forelegs = [
     new TaperTube3D(28, 14, this.limbMaterial),
     new TaperTube3D(28, 14, this.limbMaterial),
@@ -589,6 +688,7 @@ export class LonghairModel3D {
     this.coat.uniforms.uFlank.value.set(skin.flankColor ?? ginger);
     setCoatColors(this.limbMaterial, skin.furColor);
     this.limbMaterial.uniforms.uRuff.value.set(ruff);
+    this.swatPaw.setSkin(skin);
     const innerEar = skin.earInnerColor ?? '#edb19d';
     setCoatColors(this.earCoat, skin.earOuterColor ?? ginger, innerEar, innerEar, skin.earTuftColor ?? skin.furColor);
     setCoatColors(this.noseCoat, skin.noseColor ?? '#df8781');
@@ -622,9 +722,11 @@ export class LonghairModel3D {
     this.coat.uniforms.uNeckFill.value = 0.12 + 0.88 * Math.max(sleep, nod * 0.36);
   }
 
-  public pose(open: number, gazeX: number, gazeY: number): void {
-    for (const eye of this.eyes) {
+  public pose(open: number, gazeX: number, gazeY: number, anger = 0): void {
+    for (const [index, eye] of this.eyes.entries()) {
       eye.uniforms.uOpen.value = open;
+      eye.uniforms.uAnger.value = anger;
+      eye.uniforms.uSide.value = index === 0 ? -1 : 1;
       eye.uniforms.uGaze.value.set(gazeX * 0.14, gazeY * 0.12);
     }
   }

@@ -1,8 +1,9 @@
 import './style.css';
+import { normalizeSwatChance } from './headPatSwat';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { DEFAULT_TAIL_KEY_IDS, type KeyboardOrientation, type TailKeyMode } from './catEngine';
-import { DEFAULT_BUILTIN_CATS, DEFAULT_CAT_ID, FACAI_ONLY, type CatSkinConfig } from './catSkins';
+import { DEFAULT_BUILTIN_CATS, DEFAULT_CAT_ID, FACAI_ONLY, requires3D, resolveCatRenderMode, type CatSkinConfig } from './catSkins';
 import type { KeyboardLayoutId } from './keyboardLayout';
 
 interface AppSettings {
@@ -27,6 +28,7 @@ interface AppSettings {
   obsHidePet: boolean;
   renderMode?: '2d' | '3d';
   collarColor?: 'none' | 'red' | 'blue' | 'pink' | 'green';
+  headPatSwatChance?: number;
   headphoneMode?: 'auto' | 'on' | 'off';
 }
 
@@ -224,7 +226,8 @@ function syncUI(): void {
   const activeCat = catList.find((c) => c.id === settings.catBreed) ?? catList[0];
   renderBreedPills();
 
-  const renderMode = settings.renderMode === '2d' ? '2d' : '3d';
+  const renderMode = resolveCatRenderMode(settings.catBreed, settings.renderMode);
+  document.getElementById('render-mode-row')?.classList.toggle('hidden', requires3D(settings.catBreed));
   const collarColor =
     settings.collarColor === 'red' ||
     settings.collarColor === 'blue' ||
@@ -242,6 +245,14 @@ function syncUI(): void {
   if (collarRowEl) {
     collarRowEl.classList.toggle('hidden', renderMode === '2d' || settings.catBreed === 'dafeiyu');
   }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-swatchance]').forEach((btn) => {
+    const active = Number(btn.dataset.swatchance) === normalizeSwatChance(settings.headPatSwatChance);
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', String(active));
+  });
+  const swatRow = document.getElementById('swat-chance-row');
+  swatRow?.classList.toggle('hidden', settings.catBreed === 'dafeiyu' || renderMode === '2d');
 
   const headphoneMode =
     settings.headphoneMode === 'auto' || settings.headphoneMode === 'on'
@@ -484,9 +495,14 @@ async function bootstrap(): Promise<void> {
     }
 
     const target = (e.target as HTMLElement).closest<HTMLElement>(
-      '[data-action], [data-breed], [data-rendermode], [data-collar], [data-headphonemode], [data-kblayout], [data-kborient], [data-tailmode]',
+      '[data-action], [data-breed], [data-rendermode], [data-collar], [data-headphonemode], [data-swatchance], [data-kblayout], [data-kborient], [data-tailmode]',
     );
     if (!target) return;
+
+    if (target.dataset.swatchance !== undefined) {
+      void applySettingsPatch({ headPatSwatChance: normalizeSwatChance(Number(target.dataset.swatchance)) });
+      return;
+    }
 
     const headphoneAttr = target.dataset.headphonemode;
     if (headphoneAttr === 'auto' || headphoneAttr === 'on' || headphoneAttr === 'off') {
@@ -496,7 +512,7 @@ async function bootstrap(): Promise<void> {
 
     const renderModeAttr = target.dataset.rendermode;
     if (renderModeAttr === '2d' || renderModeAttr === '3d') {
-      void applySettingsPatch({ renderMode: renderModeAttr });
+      void applySettingsPatch({ renderMode: resolveCatRenderMode(settings.catBreed, renderModeAttr) });
       return;
     }
 

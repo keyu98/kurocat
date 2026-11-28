@@ -19,3 +19,5 @@ android/app/src/main/assets/web/
 *.keystore
 *.apk
 *.aab
+
+artifacts/head-pat-swat/

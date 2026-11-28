@@ -968,6 +968,13 @@ export class KeyboardAndMouse3D {
     return this.keys.get(id) || null;
   }
 
+  public hitTestKey(raycaster: THREE.Raycaster): KeySpec | null {
+    if (!this.topInstanced) return null;
+    this.topInstanced.updateWorldMatrix(true, false);
+    const hit = raycaster.intersectObject(this.topInstanced, false)[0];
+    return hit?.instanceId === undefined ? null : getKeyboardLayout(this.layoutId).keys[hit.instanceId] ?? null;
+  }
+
   public setKeyDown(id: string, down: boolean): void {
     const k = this.keys.get(id);
     if (!k) return;

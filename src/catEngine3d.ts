@@ -5,6 +5,8 @@ import type { KeyboardLayoutId } from './keyboardLayout';
 import type { KeyboardOrientation, TailKeyMode } from './catEngine';
 import { DEFAULT_TAIL_KEY_IDS } from './catEngine';
 import { catAudio } from './audio';
+import { HeadPatSwat, normalizeSwatChance } from './headPatSwat';
+import { ScreenClawScratches3D } from './screenClawScratches3d';
 import {
   FurShaderSystem,
   resolveFurPalette3D,
@@ -510,6 +512,68 @@ function createHeadsetMaterial(
  * (NO KeyCat white sticker rim, NO bobblehead neck seam, NO tall KeyCat ears, NO wired mouse).
  */
 export class KuroCatEngine3D {
+  private readonly headPatSwat = new HeadPatSwat();
+  private tailPickerActive = false;
+
+  public setTailPickerActive(active: boolean): void {
+    this.tailPickerActive = active;
+    if (active) this.cancelHeadPatSwat();
+  }
+
+  private cancelHeadPatSwat(): void {
+    this.headPatSwat.cancel();
+    if (this.longhairModel) this.longhairModel.swatPaw.root.visible = false;
+    this.clawScratches.clear();
+  }
+
+  public hitTestKeyAtClientPoint(clientX: number, clientY: number) {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return null;
+    this.raycaster.setFromCamera(new THREE.Vector2(
+      (clientX - rect.left) / rect.width * 2 - 1,
+      1 - (clientY - rect.top) / rect.height * 2,
+    ), this.camera);
+    return this.desk.hitTestKey(this.raycaster);
+  }
+
+  public getKeyboardClientBounds(): DOMRect {
+    const rect = this.canvas.getBoundingClientRect();
+    const box = new THREE.Box3().setFromObject(this.desk.boardGroup);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      const p = new THREE.Vector3(x, y, z).project(this.camera);
+      const cx = rect.left + (p.x + 1) * rect.width / 2;
+      const cy = rect.top + (1 - p.y) * rect.height / 2;
+      x0 = Math.min(x0, cx); y0 = Math.min(y0, cy);
+      x1 = Math.max(x1, cx); y1 = Math.max(y1, cy);
+    }
+    return new DOMRect(x0, y0, x1 - x0, y1 - y0);
+  }
+
+  public setHeadPatSwatChance(chance: number | undefined): void {
+    this.headPatSwat.chance = normalizeSwatChance(chance);
+  }
+
+  private isCursorOverHead(): boolean {
+    this.raycaster.setFromCamera(this.cursorNdc, this.camera);
+    const targets = this.longhairActive && this.longhairModel ? this.longhairModel.hitMeshes : this.petMeshes;
+    const hits = this.raycaster.intersectObjects(targets, false);
+    return hits.length > 0 && hits[0].point.y >= 1.15;
+  }
+
+  private moveHeadPat(nx: number, ny: number, overHead: boolean): void {
+    const eligible = overHead && !this.tailPickerActive && !this.privacyMode && !this.leftMouseDown && !this.rightMouseDown &&
+      !this.paws.L.down && !this.paws.R.down;
+    if (this.headPatSwat.move(nx * 420, ny * 440, this.elapsed * 1000, eligible)) {
+      this.petting = false;
+      this.squintAmt = 0;
+      this.curiousUntil = -100;
+      this.idleAct = null;
+      this.crossHuffDir = this.cursorNdc.x >= 0 ? -1 : 1;
+      catAudio.setPurrIntensity(0);
+      this.wake();
+    }
+  }
   public showKeyBubbles = true;
   public privacyMode = false;
 
@@ -556,6 +620,7 @@ export class KuroCatEngine3D {
 
   // Shared materials updated on skin switch
   private readonly pawMat: THREE.ShaderMaterial;
+  private readonly clawScratches: ScreenClawScratches3D;
   private readonly hindPaws: THREE.Mesh[] = [];
   private readonly toeMat = new THREE.MeshBasicMaterial({ color: '#343640', depthTest: true });
   private readonly lidArcMat = new THREE.MeshBasicMaterial({
@@ -790,6 +855,8 @@ export class KuroCatEngine3D {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.camera = new THREE.PerspectiveCamera(22, 1.35, 0.1, 100);
+    this.scene.add(this.camera);
+    this.clawScratches = new ScreenClawScratches3D(this.camera);
     this.desk = new KeyboardAndMouse3D(this.scene);
     this.pawMat = this.furSystem.createMaterial('PAW');
 
@@ -1461,6 +1528,7 @@ export class KuroCatEngine3D {
   }
 
   public stop(): void {
+    this.cancelHeadPatSwat();
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
@@ -1505,6 +1573,8 @@ export class KuroCatEngine3D {
       this.elapsed - this.lastInput < 3.0 ||
       this.elapsed - this.cursorActiveAt < 2.4 ||
       this.isCross ||
+      this.headPatSwat.isActive(this.elapsed * 1000) ||
+      this.clawScratches.sprite.visible ||
       this.petting ||
       this.elapsed < this.curiousUntil ||
       this.popups.length > 0 ||
@@ -1548,6 +1618,7 @@ export class KuroCatEngine3D {
   };
 
   public setCatSkin(skin: CatSkinConfig): void {
+    if (this.currentSkin?.id !== skin.id) this.cancelHeadPatSwat();
     this.currentSkin = skin;
     const p = resolveFurPalette3D(skin, this.renderStyle);
     this.longhairActive = skin.id === ORANGE_WHITE_LONGHAIR.id;
@@ -1558,6 +1629,7 @@ export class KuroCatEngine3D {
         this.headMount.add(model.head);
         this.ears.forEach((ear, i) => ear.group.add(model.ears[i]));
         this.scene.add(...model.forelegs.map((foreleg) => foreleg.mesh));
+        this.scene.add(model.swatPaw.root);
         this.longhairTail = createCleanLimb(this.scene, {
           segments: 38,
           radial: 16,
@@ -1574,6 +1646,7 @@ export class KuroCatEngine3D {
       this.longhairModel.head.visible = this.longhairActive;
       for (const ear of this.longhairModel.ears) ear.visible = this.longhairActive;
       for (const foreleg of this.longhairModel.forelegs) foreleg.mesh.visible = this.longhairActive;
+      if (!this.longhairActive) this.longhairModel.swatPaw.root.visible = false;
     }
     for (const arm of this.arms) {
       arm.paw.visible = !this.longhairActive;
@@ -1690,6 +1763,7 @@ export class KuroCatEngine3D {
   }
 
   public setPrivacyMode(active: boolean): void {
+    if (active) this.cancelHeadPatSwat();
     this.privacyMode = active;
     if (active) {
       this.desk.releaseAllKeys();
@@ -1861,7 +1935,10 @@ export class KuroCatEngine3D {
       this.cursorActiveAt = this.elapsed;
       this.wakeRendering();
     }
-    if (overCat && !this.leftMouseDown && !this.rightMouseDown && delta > 0.006) {
+    const overHead = overCat && this.isCursorOverHead();
+    this.moveHeadPat(relX, relY, overHead);
+    if (overHead && !this.privacyMode && !this.headPatSwat.isActive(this.elapsed * 1000) &&
+      !this.leftMouseDown && !this.rightMouseDown && delta > 0.006) {
       this.petting = true;
       this.petUntil = this.elapsed + 0.36;
       this.petX = clamp(this.cursorNdc.x * 2.0, -1, 1);
@@ -1929,16 +2006,16 @@ export class KuroCatEngine3D {
 
     let overHead = false;
     if (insideCanvas && allowPetting && !this.leftMouseDown && !this.rightMouseDown) {
-      this.raycaster.setFromCamera(this.cursorNdc, this.camera);
-      const targets = this.longhairActive && this.longhairModel ? this.longhairModel.hitMeshes : this.petMeshes;
-      const hits = this.raycaster.intersectObjects(targets, false);
-      overHead = hits.length > 0 && hits[0].point.y >= 1.15;
-      if (overHead) {
+      overHead = this.isCursorOverHead();
+      this.moveHeadPat(nx, ny, overHead);
+      if (overHead && !this.privacyMode && !this.headPatSwat.isActive(this.elapsed * 1000)) {
         this.petting = true;
         this.petUntil = this.elapsed + 0.30;
         this.petX = clamp(this.cursorNdc.x * 2.5, -1, 1);
         this.wake();
       }
+    } else {
+      this.headPatSwat.resetGesture();
     }
     return overHead;
   }
@@ -2084,6 +2161,7 @@ export class KuroCatEngine3D {
     this.elapsed += dt;
     const t = this.elapsed;
     const longhair = this.longhairActive ? this.longhairModel : null;
+    const swatPose = this.headPatSwat.pose(t * 1000);
 
     // 1) Camera smooth 360° turntable framing (skip redundant lookAt matrix rebuild when static)
     const az = (this.sOrbitAz.step(this.orbitAzimuthTarget, dt) * Math.PI) / 180;
@@ -2127,17 +2205,18 @@ export class KuroCatEngine3D {
     if (this.petting && t > this.petUntil) {
       this.petting = false;
     }
-    const petActive = this.petting && !this.privacyMode && !this.isCross;
+    const petActive = this.petting && !this.privacyMode && !this.isCross &&
+      !this.headPatSwat.isActive(t * 1000);
     this.squintAmt += ((petActive ? 1 : 0) - this.squintAmt) * approach(12, dt);
 
     // Curious trigger from swift cursor sweep
     this.pointerSamples = this.pointerSamples.filter((s) => t - s.t <= 0.22);
     const pointerSpeed = this.pointerSamples.reduce((a, s) => a + s.dist, 0) / 0.22;
-    const canCurious = !this.asleep && !this.privacyMode && !this.isCross && t - this.lastKey > 0.9;
+    const canCurious = !this.asleep && !this.privacyMode && !this.isCross && !swatPose && t - this.lastKey > 0.9;
     if (canCurious && this.pointerSamples.length >= 4 && pointerSpeed > 0.92) {
       this.curiousUntil = Math.max(this.curiousUntil, t + 2.2);
     }
-    const curiousNow = !this.asleep && !this.privacyMode && !this.isCross && t < this.curiousUntil;
+    const curiousNow = !this.asleep && !this.privacyMode && !this.isCross && !swatPose && t < this.curiousUntil;
     const curious = clamp(this.sCurious.step(curiousNow ? 1 : 0, dt), 0, 1);
 
     // Grumpy annoyance state
@@ -2164,7 +2243,9 @@ export class KuroCatEngine3D {
       this.isCross = false;
       this.annoy = Math.max(0, this.annoy - 0.35 * dt);
     }
-    const cross = clamp(this.sCross.step(this.isCross ? 1 : 0, dt), 0, 1);
+    // The swat's expression follows its own short envelope; it must not leave
+    // the long-lived typing-annoyance mood set after the paw returns home.
+    const cross = Math.max(clamp(this.sCross.step(this.isCross ? 1 : 0, dt), 0, 1), swatPose?.anger ?? 0);
 
     // Calm idle fidgets
     if (this.idleAct && t > this.idleAct.t0 + this.idleAct.dur) this.idleAct = null;
@@ -2175,6 +2256,7 @@ export class KuroCatEngine3D {
       !this.asleep &&
       !this.privacyMode &&
       !petActive &&
+      !swatPose &&
       !this.isCross &&
       !curiousNow
     ) {
@@ -2347,6 +2429,7 @@ export class KuroCatEngine3D {
     if (act && act.kind === 'slowBlink') {
       blinkClose = Math.max(blinkClose, Math.sin(actU * Math.PI));
     }
+    if (swatPose) blinkClose = 0;
 
     const isSleepOrPrivacy = this.sleepAmt > 0.45 || this.privacyClose > 0.45;
     const isPetSquint = !isSleepOrPrivacy && this.squintAmt > 0.38 && blinkClose < 0.3;
@@ -2366,6 +2449,7 @@ export class KuroCatEngine3D {
       isSleepOrPrivacy || isBlinkClosed ? 0 : isPetSquint ? 0.10 : 1 - blinkClose,
       gazeX,
       gazeY,
+      cross,
     );
     for (const e of this.eyes) {
       e.blush.visible = !longhair && showBlush;
@@ -2479,6 +2563,17 @@ export class KuroCatEngine3D {
 
     // 9) Sleek Unified KuroCat Arms + Cozy Tucked Idle Belly Paws!
     const updatePaw = (paw: PawTrack3D, isLeft: boolean) => {
+      const swat = swatPose?.side === paw.side ? swatPose : null;
+      if (swat) {
+        paw.tuckWeight = 1 - swat.weight;
+        this.tmpPawLocal.set(swat.x * 0.65, 0.14 + swat.lift * 1.70,
+          (longhair ? 0.725 : 0.54) + swat.reach * 0.65);
+        this.attachLocal(this.tmpPawLocal, paw.pos);
+        paw.spring.x.copy(paw.pos);
+        paw.spring.v.set(0, 0, 0);
+        paw.last.copy(paw.pos);
+        return;
+      }
       const activeForMouse = isLeft && mousing;
       const activeForKey = Boolean(paw.keyId && (paw.down || t - paw.t0 < 0.52)) && !this.asleep && !this.privacyMode;
       const wantTuck = !activeForMouse && !activeForKey ? 1 : 0;
@@ -2529,7 +2624,7 @@ export class KuroCatEngine3D {
       this.attachLocal(shoulderLocal, arm.shoulder);
       arm.hand.copy(pawTrack.pos);
 
-      const onMouse = arm.s < 0 && mousing;
+      const onMouse = arm.s < 0 && mousing && swatPose?.side !== arm.s;
       const reach = arm.shoulder.distanceTo(arm.hand);
       const lift = mix(0.24, 0.06, clamp((reach - 0.85) / 0.85, 0, 1)) * (1 - tuck * 0.65);
 
@@ -2561,10 +2656,11 @@ export class KuroCatEngine3D {
         const foreleg = longhair.forelegs[arm.s < 0 ? 0 : 1];
         this.tmpArmOff.subVectors(arm.hand, arm.c2).setY(0).normalize();
         const reachPad = (onMouse ? 0.045 : 0.083) * (1 - tuck);
+        const swatWrist = swatPose?.side === arm.s ? 1 - swatPose.weight : 1;
         foreleg.update((u, out) => {
           traceArm(u, out);
-          out.y += (0.052 + 0.021 * (1 - tuck)) * smoothstep(0.46, 0.94, u);
-          out.addScaledVector(this.tmpArmOff, reachPad * smoothstep(0.74, 1, u));
+          out.y += (0.052 + 0.021 * (1 - tuck)) * smoothstep(0.46, 0.94, u) * swatWrist;
+          out.addScaledVector(this.tmpArmOff, reachPad * smoothstep(0.74, 1, u) * swatWrist);
         }, (u) => {
           const width = mix(0.169, 0.108, smoothstep(0.14, 0.65, u)) * mix(1.0, 0.69, tuck);
           const pad = mix(width, mix(0.116, 0.095, tuck), smoothstep(0.60, 0.79, u));
@@ -2587,6 +2683,29 @@ export class KuroCatEngine3D {
       arm.paw.scale.set(0.126 * pawScale, 0.080 * pawScale, 0.118 * pawScale);
       arm.paw.rotation.y = Math.atan2(arm.hand.x - arm.c2.x, Math.max(0.1, arm.hand.z - arm.c2.z)) * 0.42;
     }
+
+    const swatPaw = longhair?.swatPaw;
+    if (swatPaw) swatPaw.root.visible = Boolean(swatPose && swatPose.lift > 0.12 && !this.privacyMode);
+    if (swatPaw?.root.visible && swatPose) {
+      swatPaw.root.position.copy(swatPose.side < 0 ? this.paws.L.pos : this.paws.R.pos);
+      // Show the underside on the windup; curl the toes into rounded knuckles
+      // and tip the fist forward at contact. The central pad stays visible.
+      swatPaw.root.quaternion.copy(this.camera.quaternion);
+      swatPaw.root.rotateZ(swatPose.side * (-0.20 + Math.abs(swatPose.x) * 0.15));
+      swatPaw.root.rotateY(swatPose.side * -0.28);
+      swatPaw.root.rotateX(-0.18 * swatPose.grip);
+      const size = swatPose.weight * (1 + swatPose.reach * 0.08);
+      swatPaw.root.scale.set(swatPose.side * size, size, size);
+      swatPaw.pose(swatPose.grip, swatPose.claws);
+    }
+    if (this.headPatSwat.takeImpact(t * 1000) && swatPose) {
+      let contact = swatPose.side < 0 ? this.paws.L.pos : this.paws.R.pos;
+      if (swatPaw) {
+        contact = swatPaw.contactPoint(this.tmpFxPos);
+      }
+      this.clawScratches.strike(contact, this.camera, t, swatPose.side);
+    }
+    this.clawScratches.update(t, this.camera);
 
     // 10) Floating Key Bubbles, Anger Mark 💢 & Sleep Zzz FX
     for (let i = this.popups.length - 1; i >= 0; i--) {

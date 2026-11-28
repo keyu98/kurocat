@@ -161,6 +161,7 @@ fn tool_definitions() -> Value {
                         "description": "Logical key IDs tapped by the tail when tailKeyMode is 'custom' (e.g. ['enter', 'space', 'bs', 'esc', 'r', 'tab', 'up', 'down', 'left', 'right', 'np_0'])."
                     },
                     "showKeyBubbles": { "type": "boolean" },
+                    "headPatSwatChance": { "type": "number", "minimum": 0, "maximum": 1, "description": "Chance of a playful paw swat after intentional head strokes (default 0.25; 0 disables it)." },
                     "soundEnabled": { "type": "boolean" },
                     "alwaysOnTop": { "type": "boolean" },
                     "clickThroughLocked": { "type": "boolean" },
@@ -242,6 +243,7 @@ fn execute_tool(name: &str, args: &Value, on_change: &dyn Fn()) -> Value {
             }
             let mut s = load_settings();
             s.cat_breed = id.clone();
+            s.render_mode = crate::config::normalize_cat_render_mode(&s.render_mode, &s.cat_breed);
             save_settings(&s);
             on_change();
             ok_text(json!({
@@ -297,6 +299,9 @@ fn execute_tool(name: &str, args: &Value, on_change: &dyn Fn()) -> Value {
             if let Some(hm) = args.get("headphoneMode").and_then(|v| v.as_str()) {
                 s.headphone_mode = crate::config::normalize_headphone_mode(hm);
             }
+            if let Some(chance) = args.get("headPatSwatChance").and_then(|v| v.as_f64()) {
+                s.head_pat_swat_chance = crate::config::normalize_head_pat_swat_chance(chance);
+            }
             if let Some(layout) = args.get("keyboardLayout").and_then(|v| v.as_str()) {
                 s.keyboard_layout = crate::config::normalize_keyboard_layout(layout);
             }
@@ -330,6 +335,7 @@ fn execute_tool(name: &str, args: &Value, on_change: &dyn Fn()) -> Value {
                     s.autostart = b;
                 }
             }
+            s.render_mode = crate::config::normalize_cat_render_mode(&s.render_mode, &s.cat_breed);
             save_settings(&s);
             on_change();
             ok_text(serde_json::to_value(&s).unwrap_or(json!({})))

@@ -1,4 +1,5 @@
 import './style.css';
+import { normalizeSwatChance } from './headPatSwat';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -9,7 +10,7 @@ import {
   type TailKeyMode,
 } from './catEngine';
 import { catAudio } from './audio';
-import { DEFAULT_BUILTIN_CATS, DEFAULT_CAT_ID, FACAI_ONLY, type CatSkinConfig } from './catSkins';
+import { DEFAULT_BUILTIN_CATS, DEFAULT_CAT_ID, FACAI_ONLY, requires3D, resolveCatRenderMode, type CatSkinConfig } from './catSkins';
 import {
   getKeyboardLayout,
   resolveKeyByVk,
@@ -44,6 +45,7 @@ interface AppSettings {
   obsHidePet?: boolean;
   renderMode?: DesktopRenderMode;
   collarColor?: CollarColorId;
+  headPatSwatChance?: number;
   headphoneMode?: HeadphoneMode;
 }
 
@@ -197,9 +199,9 @@ function shouldWearHeadphonesNow(): boolean {
 
 function wants3DNow(): boolean {
   return (
-    settings.renderMode !== '2d' &&
+    resolveCatRenderMode(settings.catBreed, settings.renderMode) === '3d' &&
     settings.catBreed !== 'dafeiyu' &&
-    !tailPickerOpen &&
+    (!tailPickerOpen || requires3D(settings.catBreed)) &&
     !isWin7Ulw &&
     !webgl3dUnavailable
   );
@@ -225,6 +227,7 @@ function syncEngine3DState(): void {
       ? settings.collarColor
       : 'none';
 
+  engine3d.setHeadPatSwatChance(settings.headPatSwatChance);
   engine3d.showKeyBubbles = settings.showKeyBubbles;
   engine3d.setRenderStyle('3d');
   if (activeCat) {
@@ -236,12 +239,29 @@ function syncEngine3DState(): void {
   engine3d.setKeyboardConfig(kbLayout, kbOrient);
   engine3d.setTailKeyConfig(tailMode, tailIds);
   engine3d.setPrivacyMode(privacyActive);
+  engine3d.setTailPickerActive(tailPickerOpen);
   engine3d.resize();
 }
 
+function show3DUnavailable(): void {
+  engine.stop();
+  engine3d?.stop();
+  canvas.classList.add('hidden');
+  canvas3d.classList.add('hidden');
+  active3d = false;
+  document.getElementById('render-error')?.classList.remove('hidden');
+}
+
 function activateRenderEngine(): void {
+  const only3D = requires3D(settings.catBreed);
+  document.getElementById('render-error')?.classList.add('hidden');
+  if (only3D) {
+    engine.stop();
+    canvas.classList.add('hidden');
+  }
   const want3d = wants3DNow();
   if (!want3d) {
+    if (only3D) { show3DUnavailable(); return; }
     if (active3d) {
       engine3d?.stop();
       canvas3d.classList.add('hidden');
@@ -274,8 +294,9 @@ function activateRenderEngine(): void {
         activateRenderEngine();
       })
       .catch((err) => {
-        console.warn('3D WebGL unavailable, keeping 2D mode:', err);
+        console.warn('3D renderer unavailable:', err);
         webgl3dUnavailable = true;
+        if (requires3D(settings.catBreed)) { show3DUnavailable(); return; }
         active3d = false;
         canvas3d.classList.add('hidden');
         canvas.classList.remove('hidden');
@@ -360,7 +381,9 @@ function syncMenuUI(): void {
   const activeCat = catList.find((c) => c.id === settings.catBreed) ?? catList[0];
   renderBreedPills();
 
-  const renderMode: DesktopRenderMode = settings.renderMode === '2d' ? '2d' : '3d';
+  const renderMode = resolveCatRenderMode(settings.catBreed, settings.renderMode);
+  settings.renderMode = renderMode;
+  document.getElementById('render-mode-row')?.classList.toggle('hidden', requires3D(settings.catBreed));
   const collarColor: CollarColorId =
     settings.collarColor === 'red' ||
     settings.collarColor === 'blue' ||
@@ -378,6 +401,14 @@ function syncMenuUI(): void {
   if (collarRowEl) {
     collarRowEl.classList.toggle('hidden', renderMode === '2d' || settings.catBreed === 'dafeiyu');
   }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-swatchance]').forEach((btn) => {
+    const active = Number(btn.dataset.swatchance) === normalizeSwatChance(settings.headPatSwatChance);
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', String(active));
+  });
+  const swatRow = document.getElementById('swat-chance-row');
+  swatRow?.classList.toggle('hidden', settings.catBreed === 'dafeiyu' || renderMode === '2d');
 
   const headphoneMode: HeadphoneMode =
     settings.headphoneMode === 'auto' || settings.headphoneMode === 'on'
@@ -431,7 +462,7 @@ function syncTailPickerBounds(): void {
   void invoke('set_tail_picker_bounds', {
     bounds: {
       toolbar: normalized(tailPickerBarEl.getBoundingClientRect()),
-      keyboard: normalized(engine.getKeyboardClientBounds()),
+      keyboard: normalized((active3d && engine3d ? engine3d : engine).getKeyboardClientBounds()),
       closeButton: normalized(btnTailCancelEl.getBoundingClientRect()),
     },
   });
@@ -447,6 +478,7 @@ function syncTailPickerSelection(): void {
     button.setAttribute('aria-pressed', String(isTailPresetSelected(presetKeys)));
   }
   engine.setTailPickerActive(true, tailPickerSelection);
+  engine3d?.setTailPickerActive(true);
   syncTailPickerBounds();
 }
 
@@ -507,6 +539,8 @@ function closeTailPicker(): void {
   tailPickerBarEl.classList.add('hidden');
   canvas.classList.remove('tail-key-hover');
   engine.setTailPickerActive(false);
+  engine3d?.setTailPickerActive(false);
+  canvas3d.classList.remove('tail-key-hover');
   syncTailPickerBounds();
   activateRenderEngine();
   syncWin7OverlayFn?.(false);
@@ -826,7 +860,8 @@ async function bootstrap(): Promise<void> {
     document.documentElement.classList.add('facai-only');
     document.title = '发财';
   }
-  engine.start();
+  if (!requires3D(settings.catBreed)) engine.start();
+  else canvas.classList.add('hidden');
 
   // Hide Windows-only desktop shortcut button on macOS
   if (/Mac/i.test(navigator.platform) || /Macintosh/i.test(navigator.userAgent)) {
@@ -1078,17 +1113,17 @@ async function bootstrap(): Promise<void> {
     }
   });
 
-  canvas.addEventListener('mousemove', (e) => {
+  for (const pickerCanvas of [canvas, canvas3d]) pickerCanvas.addEventListener('mousemove', (e) => {
     if (!tailPickerOpen) return;
-    const hit = engine.hitTestKeyAtClientPoint(e.clientX, e.clientY);
+    const hit = (active3d && engine3d ? engine3d : engine).hitTestKeyAtClientPoint(e.clientX, e.clientY);
     engine.setTailPickerHover(hit ? hit.id : null);
-    canvas.classList.toggle('tail-key-hover', Boolean(hit));
+    pickerCanvas.classList.toggle('tail-key-hover', Boolean(hit));
   });
 
-  canvas.addEventListener('mouseleave', () => {
+  for (const pickerCanvas of [canvas, canvas3d]) pickerCanvas.addEventListener('mouseleave', () => {
     if (!tailPickerOpen) return;
     engine.setTailPickerHover(null);
-    canvas.classList.remove('tail-key-hover');
+    pickerCanvas.classList.remove('tail-key-hover');
   });
 
   // Left-click keycap toggle in tail-picker mode, OR drag to reposition transparent window (both 2D & 3D canvases!)
@@ -1096,7 +1131,7 @@ async function bootstrap(): Promise<void> {
     if (e.button === 0) {
       closeContextMenu();
       if (tailPickerOpen) {
-        const hit = engine.hitTestKeyAtClientPoint(e.clientX, e.clientY);
+        const hit = (active3d && engine3d ? engine3d : engine).hitTestKeyAtClientPoint(e.clientX, e.clientY);
         if (hit) {
           e.preventDefault();
           e.stopPropagation();
@@ -1151,9 +1186,14 @@ async function bootstrap(): Promise<void> {
 
   menuEl.addEventListener('click', (e) => {
     const target = (e.target as HTMLElement).closest<HTMLElement>(
-      '[data-action], [data-scale], [data-breed], [data-rendermode], [data-collar], [data-headphonemode], [data-kblayout], [data-kborient], [data-tailmode]',
+      '[data-action], [data-scale], [data-breed], [data-rendermode], [data-collar], [data-headphonemode], [data-swatchance], [data-kblayout], [data-kborient], [data-tailmode]',
     );
     if (!target) return;
+
+    if (target.dataset.swatchance !== undefined) {
+      void applySettingsPatch({ headPatSwatChance: normalizeSwatChance(Number(target.dataset.swatchance)) });
+      return;
+    }
 
     const headphoneAttr = target.dataset.headphonemode;
     if (headphoneAttr === 'auto' || headphoneAttr === 'on' || headphoneAttr === 'off') {
@@ -1163,7 +1203,7 @@ async function bootstrap(): Promise<void> {
 
     const renderModeAttr = target.dataset.rendermode;
     if (renderModeAttr === '2d' || renderModeAttr === '3d') {
-      void applySettingsPatch({ renderMode: renderModeAttr });
+      void applySettingsPatch({ renderMode: resolveCatRenderMode(settings.catBreed, renderModeAttr) });
       return;
     }
 

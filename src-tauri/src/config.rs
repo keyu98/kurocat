@@ -40,9 +40,20 @@ pub fn default_render_mode() -> String {
 }
 
 pub fn normalize_render_mode(raw: &str) -> String {
+    if FACAI_ONLY {
+        return "3d".to_string();
+    }
     match raw.trim().to_ascii_lowercase().as_str() {
         "2d" => "2d".to_string(),
         _ => "3d".to_string(),
+    }
+}
+
+pub fn normalize_cat_render_mode(raw: &str, cat_breed: &str) -> String {
+    if cat_breed == "orange-white-longhair" {
+        "3d".to_string()
+    } else {
+        normalize_render_mode(raw)
     }
 }
 
@@ -62,6 +73,18 @@ pub fn normalize_collar_color(raw: &str) -> String {
 
 pub fn default_headphone_mode() -> String {
     "off".to_string()
+}
+
+pub fn default_head_pat_swat_chance() -> f64 {
+    0.25
+}
+
+pub fn normalize_head_pat_swat_chance(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        default_head_pat_swat_chance()
+    }
 }
 
 pub fn normalize_headphone_mode(raw: &str) -> String {
@@ -187,6 +210,8 @@ pub struct AppSettings {
     pub collar_color: String,
     #[serde(default = "default_headphone_mode")]
     pub headphone_mode: String,
+    #[serde(default = "default_head_pat_swat_chance")]
+    pub head_pat_swat_chance: f64,
 }
 
 impl Default for AppSettings {
@@ -218,6 +243,7 @@ impl Default for AppSettings {
             render_mode: default_render_mode(),
             collar_color: default_collar_color(),
             headphone_mode: default_headphone_mode(),
+            head_pat_swat_chance: default_head_pat_swat_chance(),
         }
     }
 }
@@ -263,9 +289,10 @@ pub fn load_settings() -> AppSettings {
             parsed.scale = parsed.scale.clamp(0.20, 1.50);
             parsed.tail_key_mode = normalize_tail_key_mode(&parsed.tail_key_mode);
             parsed.tail_key_ids = normalize_tail_key_ids(&parsed.tail_key_ids);
-            parsed.render_mode = normalize_render_mode(&parsed.render_mode);
+            parsed.render_mode = normalize_cat_render_mode(&parsed.render_mode, &parsed.cat_breed);
             parsed.collar_color = normalize_collar_color(&parsed.collar_color);
             parsed.headphone_mode = normalize_headphone_mode(&parsed.headphone_mode);
+            parsed.head_pat_swat_chance = normalize_head_pat_swat_chance(parsed.head_pat_swat_chance);
             return parsed;
         }
     }
@@ -498,6 +525,25 @@ pub fn create_desktop_shortcut() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn facai_is_3d_even_with_legacy_2d_settings() {
+        assert_eq!(normalize_cat_render_mode("2d", "orange-white-longhair"), "3d");
+        assert_eq!(normalize_cat_render_mode("3d", "orange-white-longhair"), "3d");
+        assert_eq!(normalize_cat_render_mode("2d", "black"), if FACAI_ONLY { "3d" } else { "2d" });
+    }
+
+    #[test]
+    fn head_pat_swat_chance_defaults_and_normalizes() {
+        let mut legacy = serde_json::to_value(AppSettings::default()).unwrap();
+        legacy.as_object_mut().unwrap().remove("headPatSwatChance");
+        let restored: AppSettings = serde_json::from_value(legacy).unwrap();
+        assert_eq!(restored.head_pat_swat_chance, 0.25);
+        assert_eq!(normalize_head_pat_swat_chance(-1.0), 0.0);
+        assert_eq!(normalize_head_pat_swat_chance(2.0), 1.0);
+        assert_eq!(normalize_head_pat_swat_chance(f64::NAN), 0.25);
+        assert_eq!(normalize_head_pat_swat_chance(0.3), 0.3);
+    }
 
     #[test]
     fn tail_key_mode_normalizes_safely() {
