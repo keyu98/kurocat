@@ -18,7 +18,7 @@ try {
     }));
     const result = {};
     for (const [name, x, y, width, height] of [
-      ['face-and-nose-patch', 220, 85, 320, 220], ['white-ruff', 300, 325, 150, 95],
+      ['face-and-nose-patch', 220, 85, 320, 190], ['white-ruff', 300, 325, 150, 95],
       ['white-gloves', 310, 445, 130, 90], ['orange-tail', 560, 310, 130, 140],
     ]) {
       const [a, b] = canvases.map((ctx) => ctx.getImageData(x, y, width, height).data);

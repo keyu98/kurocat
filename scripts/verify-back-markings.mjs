@@ -132,11 +132,15 @@ try {
       return count;
     };
     return {
+      leftShoulderOrangePixels: countOrange(250, 290, 90, 125),
+      rightShoulderOrangePixels: countOrange(420, 280, 95, 125),
       tailRootOrangePixels: countOrange(518, 390, 26, 100),
       tailOrangePixels: countOrange(600, 315, 80, 120),
     };
   });
   if (!values['record-before']) {
+    assert.ok(frontMarkings.leftShoulderOrangePixels > 10, `front left shoulder: ${JSON.stringify(frontMarkings)}`);
+    assert.ok(frontMarkings.rightShoulderOrangePixels > 10, `front right shoulder: ${JSON.stringify(frontMarkings)}`);
     assert.ok(frontMarkings.tailRootOrangePixels > 0, `orange tail root: ${JSON.stringify(frontMarkings)}`);
     assert.ok(frontMarkings.tailOrangePixels > 1000, `orange tail: ${JSON.stringify(frontMarkings)}`);
   }

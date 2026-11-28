@@ -347,7 +347,7 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
           float spinePatch = 1.0 - smoothstep(-0.08, 0.08,
             abs(p.x - spine) - spineWidth + raggedEdge);
           spinePatch *= smoothstep(-0.74, -0.66, p.y) * smoothstep(0.30, 0.52, -p.z);
-          float shoulderCoat = shoulderPatch * smoothstep(-0.20, 0.10, -p.z);
+          float shoulderCoat = shoulderPatch * smoothstep(-0.55, 0.30, -p.z);
           float rearCoat = rearPatch * smoothstep(0.02, 0.30, -p.z);
           float backPatch = max(max(shoulderCoat, rearCoat), spinePatch);
           color = mix(color, uFlank, backPatch * (1.0 - vHeadMix));
@@ -364,6 +364,9 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
           float folds = max(furLock(lock, vec2(0.105, 0.54), vec2(0.252, -0.13), -0.073, 0.062),
                             furLock(lock, vec2(0.287, 0.61), vec2(0.480, 0.05), -0.043, 0.053));
           color *= 1.0 - 0.080 * folds * smoothstep(0.46, 0.87, p.z);
+          float frontShoulder = shoulderPatch * smoothstep(0.06, 0.34, p.z)
+                              * smoothstep(0.55, 0.75, abs(p.x));
+          color = mix(color, uFlank, frontShoulder * 0.60 * (1.0 - vHeadMix));
           color = mix(color, faceColor, vHeadMix);
         #elif defined(EAR)
           vec3 p = vLocation;
