@@ -3,7 +3,7 @@ import { normalizeSwatChance } from './headPatSwat';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { DEFAULT_TAIL_KEY_IDS, type KeyboardOrientation, type TailKeyMode } from './catEngine';
-import { DEFAULT_BUILTIN_CATS, DEFAULT_CAT_ID, FACAI_ONLY, type CatSkinConfig } from './catSkins';
+import { DEFAULT_BUILTIN_CATS, DEFAULT_CAT_ID, FACAI_ONLY, requires3D, resolveCatRenderMode, type CatSkinConfig } from './catSkins';
 import type { KeyboardLayoutId } from './keyboardLayout';
 
 interface AppSettings {
@@ -226,7 +226,8 @@ function syncUI(): void {
   const activeCat = catList.find((c) => c.id === settings.catBreed) ?? catList[0];
   renderBreedPills();
 
-  const renderMode = settings.renderMode === '2d' ? '2d' : '3d';
+  const renderMode = resolveCatRenderMode(settings.catBreed, settings.renderMode);
+  document.getElementById('render-mode-row')?.classList.toggle('hidden', requires3D(settings.catBreed));
   const collarColor =
     settings.collarColor === 'red' ||
     settings.collarColor === 'blue' ||
@@ -251,7 +252,7 @@ function syncUI(): void {
     btn.setAttribute('aria-pressed', String(active));
   });
   const swatRow = document.getElementById('swat-chance-row');
-  swatRow?.classList.toggle('hidden', settings.catBreed === 'dafeiyu');
+  swatRow?.classList.toggle('hidden', settings.catBreed === 'dafeiyu' || renderMode === '2d');
 
   const headphoneMode =
     settings.headphoneMode === 'auto' || settings.headphoneMode === 'on'
@@ -511,7 +512,7 @@ async function bootstrap(): Promise<void> {
 
     const renderModeAttr = target.dataset.rendermode;
     if (renderModeAttr === '2d' || renderModeAttr === '3d') {
-      void applySettingsPatch({ renderMode: renderModeAttr });
+      void applySettingsPatch({ renderMode: resolveCatRenderMode(settings.catBreed, renderModeAttr) });
       return;
     }
 

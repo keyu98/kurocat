@@ -8,7 +8,7 @@ export function normalizeSwatChance(value: number | undefined): number {
     : DEFAULT_HEAD_PAT_SWAT_CHANCE;
 }
 
-// Shared by the Canvas and Three.js renderers. x/lift/reach are local to the cat;
+// x/lift/reach are local to the 3D cat;
 // the original body, markings, tail and materials continue rendering throughout.
 const POSES = [
   { t: 0, x: 0.32, lift: 0, reach: 0 },
@@ -109,7 +109,7 @@ export class HeadPatSwat {
       lift: mix(a.lift, b.lift),
       reach: mix(a.reach, b.reach),
       weight: Math.min(1, t / 0.12, (1 - t) / 0.18),
-      frame: Math.min(5, Math.floor(t * 6)),
+      anger: Math.min(1, t / 0.08, (1 - t) / 0.22),
     };
   }
 }

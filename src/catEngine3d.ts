@@ -512,6 +512,36 @@ function createHeadsetMaterial(
  */
 export class KuroCatEngine3D {
   private readonly headPatSwat = new HeadPatSwat();
+  private tailPickerActive = false;
+
+  public setTailPickerActive(active: boolean): void {
+    this.tailPickerActive = active;
+    if (active) this.headPatSwat.cancel();
+  }
+
+  public hitTestKeyAtClientPoint(clientX: number, clientY: number) {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return null;
+    this.raycaster.setFromCamera(new THREE.Vector2(
+      (clientX - rect.left) / rect.width * 2 - 1,
+      1 - (clientY - rect.top) / rect.height * 2,
+    ), this.camera);
+    return this.desk.hitTestKey(this.raycaster);
+  }
+
+  public getKeyboardClientBounds(): DOMRect {
+    const rect = this.canvas.getBoundingClientRect();
+    const box = new THREE.Box3().setFromObject(this.desk.boardGroup);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      const p = new THREE.Vector3(x, y, z).project(this.camera);
+      const cx = rect.left + (p.x + 1) * rect.width / 2;
+      const cy = rect.top + (1 - p.y) * rect.height / 2;
+      x0 = Math.min(x0, cx); y0 = Math.min(y0, cy);
+      x1 = Math.max(x1, cx); y1 = Math.max(y1, cy);
+    }
+    return new DOMRect(x0, y0, x1 - x0, y1 - y0);
+  }
 
   public setHeadPatSwatChance(chance: number | undefined): void {
     this.headPatSwat.chance = normalizeSwatChance(chance);
@@ -525,11 +555,14 @@ export class KuroCatEngine3D {
   }
 
   private moveHeadPat(nx: number, ny: number, overHead: boolean): void {
-    const eligible = overHead && !this.privacyMode && !this.leftMouseDown && !this.rightMouseDown &&
+    const eligible = overHead && !this.tailPickerActive && !this.privacyMode && !this.leftMouseDown && !this.rightMouseDown &&
       !this.paws.L.down && !this.paws.R.down;
     if (this.headPatSwat.move(nx * 420, ny * 440, this.elapsed * 1000, eligible)) {
       this.petting = false;
       this.squintAmt = 0;
+      this.curiousUntil = -100;
+      this.idleAct = null;
+      this.crossHuffDir = this.cursorNdc.x >= 0 ? -1 : 1;
       catAudio.setPurrIntensity(0);
       this.wake();
     }
@@ -580,6 +613,9 @@ export class KuroCatEngine3D {
 
   // Shared materials updated on skin switch
   private readonly pawMat: THREE.ShaderMaterial;
+  private readonly swatPalm = new THREE.Group();
+  private readonly swatPalmMat = createHeadsetMaterial('#fff7e9', 0.06, 0.10, '#fff4df');
+  private readonly swatPadMat = createHeadsetMaterial('#e7a5a2', 0.10, 0.12, '#f9d4c8');
   private readonly hindPaws: THREE.Mesh[] = [];
   private readonly toeMat = new THREE.MeshBasicMaterial({ color: '#343640', depthTest: true });
   private readonly lidArcMat = new THREE.MeshBasicMaterial({
@@ -1139,6 +1175,33 @@ export class KuroCatEngine3D {
       });
     }
 
+    // Two merged meshes form a white mitten and five softly raised pink pads.
+    // They share the existing studio shader, so this stays a true 3D paw.
+    const padSphere = new THREE.SphereGeometry(1, 18, 12);
+    const lobes = [
+      [0, -0.028, 0, 0.135, 0.125, 0.065],
+      [-0.12, 0.084, 0.004, 0.063, 0.078, 0.060],
+      [-0.045, 0.142, 0.004, 0.067, 0.083, 0.061],
+      [0.045, 0.142, 0.004, 0.067, 0.083, 0.061],
+      [0.12, 0.084, 0.004, 0.063, 0.078, 0.060],
+    ];
+    const parts = (pads: boolean) => lobes.map(([x, y, z, sx, sy, sz], index) => ({
+      geo: padSphere,
+      matrix: new THREE.Matrix4().compose(
+        new THREE.Vector3(x, y, pads ? 0.066 : z),
+        new THREE.Quaternion(),
+        pads ? new THREE.Vector3(index === 0 ? 0.078 : 0.037, index === 0 ? 0.060 : 0.047, 0.022)
+          : new THREE.Vector3(sx, sy, sz),
+      ),
+    }));
+    this.swatPalm.add(
+      new THREE.Mesh(mergeStaticGeometries(parts(false)), this.swatPalmMat),
+      new THREE.Mesh(mergeStaticGeometries(parts(true)), this.swatPadMat),
+    );
+    padSphere.dispose();
+    this.swatPalm.visible = false;
+    this.scene.add(this.swatPalm);
+
     const mkTrack = (side: -1 | 1): PawTrack3D => {
       const pos = new THREE.Vector3(side * 0.28, 0.34, 0.62);
       return {
@@ -1576,6 +1639,7 @@ export class KuroCatEngine3D {
   public setCatSkin(skin: CatSkinConfig): void {
     if (this.currentSkin?.id !== skin.id) this.headPatSwat.cancel();
     this.currentSkin = skin;
+    this.swatPalmMat.uniforms.uBase.value.set(skin.bellyBibColor ?? skin.pawColor ?? skin.furColor);
     const p = resolveFurPalette3D(skin, this.renderStyle);
     this.longhairActive = skin.id === ORANGE_WHITE_LONGHAIR.id;
     if (this.longhairActive) {
@@ -2115,6 +2179,7 @@ export class KuroCatEngine3D {
     this.elapsed += dt;
     const t = this.elapsed;
     const longhair = this.longhairActive ? this.longhairModel : null;
+    const swatPose = this.headPatSwat.pose(t * 1000);
 
     // 1) Camera smooth 360° turntable framing (skip redundant lookAt matrix rebuild when static)
     const az = (this.sOrbitAz.step(this.orbitAzimuthTarget, dt) * Math.PI) / 180;
@@ -2165,11 +2230,11 @@ export class KuroCatEngine3D {
     // Curious trigger from swift cursor sweep
     this.pointerSamples = this.pointerSamples.filter((s) => t - s.t <= 0.22);
     const pointerSpeed = this.pointerSamples.reduce((a, s) => a + s.dist, 0) / 0.22;
-    const canCurious = !this.asleep && !this.privacyMode && !this.isCross && t - this.lastKey > 0.9;
+    const canCurious = !this.asleep && !this.privacyMode && !this.isCross && !swatPose && t - this.lastKey > 0.9;
     if (canCurious && this.pointerSamples.length >= 4 && pointerSpeed > 0.92) {
       this.curiousUntil = Math.max(this.curiousUntil, t + 2.2);
     }
-    const curiousNow = !this.asleep && !this.privacyMode && !this.isCross && t < this.curiousUntil;
+    const curiousNow = !this.asleep && !this.privacyMode && !this.isCross && !swatPose && t < this.curiousUntil;
     const curious = clamp(this.sCurious.step(curiousNow ? 1 : 0, dt), 0, 1);
 
     // Grumpy annoyance state
@@ -2196,7 +2261,9 @@ export class KuroCatEngine3D {
       this.isCross = false;
       this.annoy = Math.max(0, this.annoy - 0.35 * dt);
     }
-    const cross = clamp(this.sCross.step(this.isCross ? 1 : 0, dt), 0, 1);
+    // The swat's expression follows its own short envelope; it must not leave
+    // the long-lived typing-annoyance mood set after the paw returns home.
+    const cross = Math.max(clamp(this.sCross.step(this.isCross ? 1 : 0, dt), 0, 1), swatPose?.anger ?? 0);
 
     // Calm idle fidgets
     if (this.idleAct && t > this.idleAct.t0 + this.idleAct.dur) this.idleAct = null;
@@ -2207,6 +2274,7 @@ export class KuroCatEngine3D {
       !this.asleep &&
       !this.privacyMode &&
       !petActive &&
+      !swatPose &&
       !this.isCross &&
       !curiousNow
     ) {
@@ -2379,6 +2447,7 @@ export class KuroCatEngine3D {
     if (act && act.kind === 'slowBlink') {
       blinkClose = Math.max(blinkClose, Math.sin(actU * Math.PI));
     }
+    if (swatPose) blinkClose = 0;
 
     const isSleepOrPrivacy = this.sleepAmt > 0.45 || this.privacyClose > 0.45;
     const isPetSquint = !isSleepOrPrivacy && this.squintAmt > 0.38 && blinkClose < 0.3;
@@ -2398,6 +2467,7 @@ export class KuroCatEngine3D {
       isSleepOrPrivacy || isBlinkClosed ? 0 : isPetSquint ? 0.10 : 1 - blinkClose,
       gazeX,
       gazeY,
+      cross,
     );
     for (const e of this.eyes) {
       e.blush.visible = !longhair && showBlush;
@@ -2629,6 +2699,15 @@ export class KuroCatEngine3D {
       arm.paw.position.set(arm.hand.x, arm.hand.y - 0.010, arm.hand.z + 0.014);
       arm.paw.scale.set(0.126 * pawScale, 0.080 * pawScale, 0.118 * pawScale);
       arm.paw.rotation.y = Math.atan2(arm.hand.x - arm.c2.x, Math.max(0.1, arm.hand.z - arm.c2.z)) * 0.42;
+    }
+
+    this.swatPalm.visible = Boolean(longhair && swatPose && swatPose.lift > 0.12 && !this.privacyMode);
+    if (this.swatPalm.visible && swatPose) {
+      this.swatPalm.position.copy(this.paws.R.pos);
+      // Turn the underside toward the viewer while raising and sweeping.
+      this.swatPalm.quaternion.copy(this.camera.quaternion);
+      this.swatPalm.rotateZ(-0.22 + swatPose.x * 0.20);
+      this.swatPalm.scale.setScalar(swatPose.weight * (1 + swatPose.reach * 0.15));
     }
 
     // 10) Floating Key Bubbles, Anger Mark 💢 & Sleep Zzz FX

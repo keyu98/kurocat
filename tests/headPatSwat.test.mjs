@@ -92,20 +92,25 @@ test("a normal outcome consumes the cooldown; continued motion cannot reroll eve
   assert.equal(rolls, 2);
 });
 
-test("animation completes, has six frames, and cannot restart while playing", () => {
+test("anger covers the swat and the animation completes without restarting", () => {
   const s = new HeadPatSwat();
   s.chance = 1;
   assert.equal(rub(s, 0), true);
   const start = 100; // second reversal in rub()
-  const frames = new Set();
+  let angrySamples = 0;
   for (let i = 0; i < SWAT_DURATION_MS; i += 10) {
     const pose = s.pose(start + i);
     assert.ok(
       pose && Number.isFinite(pose.x) && pose.weight >= 0 && pose.weight <= 1,
     );
-    frames.add(pose.frame);
+    assert.ok(pose.anger >= 0 && pose.anger <= 1);
+    if (pose.anger === 1) angrySamples++;
   }
-  assert.equal(frames.size, 6);
+  assert.equal(s.pose(start).anger, 0);
+  assert.ok(
+    angrySamples > 40,
+    "anger must stay visible through windup and impact",
+  );
   assert.equal(rub(s, 200), false);
   assert.equal(s.pose(start + SWAT_DURATION_MS), null);
 });

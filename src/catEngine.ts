@@ -10,8 +10,6 @@ import {
 import { catAudio } from './audio';
 import { FACAI_ONLY, ORANGE_WHITE_LONGHAIR, resolveCustomSkin, type CatSkinConfig, type ResolvedSkin } from './catSkins';
 import { DaFeiYuRenderer, type DaFeiYuLayout } from './dafeiyuRenderer';
-import { HeadPatSwat, normalizeSwatChance } from './headPatSwat';
-import swatPawsUrl from './assets/orange-white-longhair/swat-paws.png';
 
 export const LOGICAL_W = 420;
 export const LOGICAL_H = 440;
@@ -220,19 +218,6 @@ const KEYBOARD_HIT_HALF_WIDTH_RATIO = 0.54;
 const KEYBOARD_HIT_HALF_HEIGHT_RATIO = 0.56;
 
 export class KuroCatEngine {
-  private readonly headPatSwat = new HeadPatSwat();
-  private swatPaws: HTMLImageElement | null = null;
-
-  public setHeadPatSwatChance(chance: number | undefined): void {
-    this.headPatSwat.chance = normalizeSwatChance(chance);
-  }
-
-  private loadSwatPaws(): void {
-    if (this.swatPaws) return;
-    const img = new Image();
-    img.src = swatPawsUrl;
-    this.swatPaws = img;
-  }
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private rafId: number | null = null;
@@ -282,7 +267,6 @@ export class KuroCatEngine {
   private lastDt = 1 / 60;
 
   public setPrivacyMode(active: boolean): void {
-    if (active) this.headPatSwat.cancel();
     this.wakeRendering();
     this.privacyMode = active;
     this.dafeiyu?.onPrivacyModeChanged(active);
@@ -595,8 +579,6 @@ export class KuroCatEngine {
   }
 
   public setCatAppearance(breedId: string, skin?: CatSkinConfig | null): void {
-    if (breedId !== (this.customSkin?.id ?? this.catBreed)) this.headPatSwat.cancel();
-    if (breedId === ORANGE_WHITE_LONGHAIR.id || FACAI_ONLY) this.loadSwatPaws();
     if (FACAI_ONLY) {
       this.catBreed = 'black';
       this.customSkin = resolveCustomSkin(ORANGE_WHITE_LONGHAIR);
@@ -899,7 +881,6 @@ export class KuroCatEngine {
   }
 
   public stop(): void {
-    this.headPatSwat.cancel();
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
     if (this.idleFrameTimer !== null) window.clearTimeout(this.idleFrameTimer);
     this.rafId = null;
@@ -1498,25 +1479,6 @@ export class KuroCatEngine {
     this.cursorRelX = relX;
     this.cursorRelY = relY;
     this.cursorOverCat = overCat;
-
-    // Native overCat covers the whole body. Refine it to the live head ellipse,
-    // accounting for viewport scale/offset and the deformed spine.
-    const { offsetX, offsetY, uniformScale } = this.getViewportTransform();
-    const hx = (relX * this.canvas.width - offsetX) / uniformScale;
-    const hy = (relY * this.canvas.height - offsetY) / uniformScale;
-    const head = this.spinePoint(0.24, 0);
-    const overHead = ((hx - head.x) / 61) ** 2 + ((hy - head.y) / 53) ** 2 <= 1;
-    const startedSwat = this.headPatSwat.move(hx, hy, now,
-      overCat && overHead && !this.privacyMode && !this.tailPickerActive &&
-      this.catBreed !== 'dafeiyu' && !this.mouseLeftDown && !this.mouseRightDown && this.heldKeys.size === 0);
-    if (startedSwat) {
-      this.wakeCat(now);
-      this.petEnergy = 0;
-      this.squintAmount = 0;
-      this.resetPetStrokes();
-      catAudio.setPurrIntensity(0);
-    }
-    if (this.headPatSwat.isActive(now)) return;
 
     if (overCat && !this.mouseLeftDown && !this.mouseRightDown) {
       const now = performance.now();
@@ -2173,16 +2135,6 @@ export class KuroCatEngine {
   }
 
   private updatePaw(paw: PawState, dt: number, now: number): void {
-    const swat = paw.side === 'right' ? this.headPatSwat.pose(now) : null;
-    if (swat) {
-      paw.pos = { x: this.catCenterX + swat.x * 66, y: this.catBaseY - swat.lift * 210 };
-      paw.target = { ...paw.pos };
-      paw.vel = { x: 0, y: 0 };
-      paw.idleWeight = 1 - swat.weight;
-      paw.curlWeight = 0;
-      paw.smears.length = 0;
-      return;
-    }
     const liveMouseX = this.mouseBaseX + this.mouseOffsetX;
     const liveMouseY = this.mouseBaseY + this.mouseOffsetY;
     const heldKey = this.latestHeldKeyFor(paw.side);
@@ -4184,20 +4136,6 @@ export class KuroCatEngine {
   }
 
   private drawPaw(ctx: CanvasRenderingContext2D, paw: PawState, breath: number): void {
-    const swat = paw.side === 'right' ? this.headPatSwat.pose(performance.now()) : null;
-    if (swat) {
-      const sh = this.getLiveShoulder(paw, breath);
-      ctx.save();
-      ctx.globalAlpha = swat.weight;
-      this.drawPlumpCatArm(ctx, paw.side, sh.x, sh.y, paw.pos.x, paw.pos.y, 0, true);
-      const img = this.swatPaws;
-      if (this.customSkin?.id === ORANGE_WHITE_LONGHAIR.id && img?.complete && img.naturalWidth) {
-        const size = 33 + swat.reach * 11;
-        ctx.drawImage(img, swat.frame * 128, 0, 128, 128,
-          paw.pos.x - size / 2, paw.pos.y - size / 2, size, size);
-      }
-      ctx.restore();
-    }
     // 1) Seated idle vertical front legs (EXACT 4 clean lines of ORIG 0.3s!) OR planted diagonal supporting leg (ORIG 2.2s!)
     if (paw.idleWeight > 0.05) {
       ctx.save();
@@ -4277,7 +4215,7 @@ export class KuroCatEngine {
     }
 
     // 3) Plump velvety poking / mouse-holding cat arm!
-    const activeArmWeight = swat ? 0 : Math.max(0, 1 - paw.idleWeight - paw.curlWeight);
+    const activeArmWeight = Math.max(0, 1 - paw.idleWeight - paw.curlWeight);
     if (activeArmWeight > 0.05) {
       const sh = this.getLiveShoulder(paw, breath);
       const px = paw.pos.x;

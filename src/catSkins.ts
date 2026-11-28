@@ -191,6 +191,14 @@ export function resolveCustomSkin(raw: CatSkinConfig): ResolvedSkin {
 export const ORANGE_WHITE_LONGHAIR = orangeWhiteLonghair as CatSkinConfig;
 
 export const FACAI_ONLY = import.meta.env.MODE === 'facai';
+export function requires3D(catId: string | undefined): boolean {
+  return FACAI_ONLY || catId === ORANGE_WHITE_LONGHAIR.id;
+}
+
+export function resolveCatRenderMode(catId: string | undefined, requested: string | undefined): '2d' | '3d' {
+  return requires3D(catId) || requested !== '2d' ? '3d' : '2d';
+}
+
 export const DEFAULT_CAT_ID = FACAI_ONLY ? ORANGE_WHITE_LONGHAIR.id : 'black';
 
 export const DEFAULT_BUILTIN_CATS: CatSkinConfig[] = FACAI_ONLY ? [ORANGE_WHITE_LONGHAIR] : [

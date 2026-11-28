@@ -935,3 +935,15 @@ html.win7-ulw-mode .floating-side-menu {
 .facai-only [data-action="check-update"] {
   display: none;
 }
+
+.facai-only #render-mode-row { display: none; }
+.render-error {
+  position: fixed;
+  inset: auto 12px 20px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(28, 28, 32, 0.92);
+  color: #fff4df;
+  font-size: 13px;
+  text-align: center;
+}

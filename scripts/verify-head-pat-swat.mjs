@@ -37,6 +37,9 @@ try {
   });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (msg) => {
+    if (msg.type() === "error") errors.push(msg.text());
+  });
   await page.route("**/swat-test", (r) =>
     r.fulfill({
       contentType: "text/html",
@@ -44,104 +47,12 @@ try {
     }),
   );
   await page.goto("http://127.0.0.1:1456/swat-test");
-  await page.evaluate(async () => {
-    const { KuroCatEngine } = await import("/src/catEngine.ts");
-    const { ORANGE_WHITE_LONGHAIR } = await import("/src/catSkins.ts");
-    window.skin = ORANGE_WHITE_LONGHAIR;
-    window.e = new KuroCatEngine(document.getElementById("cat"));
-    e.setCatAppearance(skin.id, skin);
-    e.setHeadPatSwatChance(1);
-    e.resize();
-    e.update(0.016, performance.now());
-    e.render();
-    window.rub2 = (y = 140, over = true) => {
-      for (const x of [175, 195, 215, 195, 175, 195, 215])
-        e.onWindowCursor(x / 420, y / 440, over);
-      return e.headPatSwat.isActive(performance.now());
-    };
-  });
-  await page.waitForFunction(
-    () => window.e.swatPaws?.complete && e.swatPaws.naturalWidth > 0,
-  );
   const checks = {};
-  checks.twoD = await page.evaluate(() => {
-    const out = {};
-    out.bellyDoesNotSwat = !rub2(240);
-    e.headPatSwat.resetGesture();
-    out.headSwats = rub2();
-    out.purrSuppressed = e.petEnergy === 0 && e.squintAmount === 0;
-    e.update(0.016, performance.now());
-    e.render();
-    const ctx = e.canvas.getContext("2d");
-    out.transparentCorner = ctx.getImageData(0, 0, 1, 1).data[3] === 0;
-    e.setPrivacyMode(true);
-    out.privacyCancels = !e.headPatSwat.isActive(performance.now());
-    out.privacyNoSwat = !rub2();
-    e.setPrivacyMode(false);
-    e.headPatSwat.rolledAt = -Infinity;
-    e.setHeadPatSwatChance(0);
-    out.disabled = !rub2();
-    out.normalPettingPreserved = e.petEnergy > 0;
-    e.headPatSwat.resetGesture();
-    e.setHeadPatSwatChance(1);
-    e.headPatSwat.rolledAt = -Infinity;
-    out.reenabled = rub2();
-    e.headPatSwat.startedAt = performance.now() - 1000;
-    e.update(0.016, performance.now());
-    out.completes = e.headPatSwat.pose(performance.now()) === null;
-    e.headPatSwat.resetGesture();
-    e.headPatSwat.rolledAt = -Infinity;
-    e.setCatAppearance("black");
-    out.blackCatSwats = rub2();
-    e.headPatSwat.cancel();
-    e.headPatSwat.rolledAt = -Infinity;
-    e.setCatAppearance("dafeiyu");
-    out.whaleExcluded = !rub2();
-    e.setCatAppearance(skin.id, skin);
-    // Full-size keyboard + small render scale: head coordinates must use the viewport transform.
-    e.headPatSwat.rolledAt = -Infinity;
-    e.setKeyboardConfig("108", "cat");
-    e.setRenderScale(0.6);
-    const v = e.getViewportTransform(),
-      h = e.spinePoint(0.24, 0);
-    for (const dx of [-20, 0, 20, 0, -20, 0, 20])
-      e.onWindowCursor(
-        (v.offsetX + (h.x + dx) * v.uniformScale) / e.canvas.width,
-        (v.offsetY + h.y * v.uniformScale) / e.canvas.height,
-        true,
-      );
-    out.scaledFullKeyboardHead = e.headPatSwat.isActive(performance.now());
-    e.headPatSwat.cancel();
-    e.setKeyboardConfig("65", "cat");
-    e.setRenderScale(1);
-    return out;
-  });
-  for (const [key, value] of Object.entries(checks.twoD))
-    assert.equal(value, true, `2D ${key}`);
-  await page.evaluate(() => {
-    e.headPatSwat.rolledAt = -Infinity;
-    e.headPatSwat.resetGesture();
-    rub2();
-  });
-  if (capture)
-    for (let i = 0; i < 30; i++) {
-      await page.evaluate((t) => {
-        e.headPatSwat.startedAt = performance.now() - t;
-        e.update(0.016, performance.now());
-        e.render();
-      }, i * 32);
-      await page.screenshot({
-        path: `${outputDir}/2d-${String(i).padStart(2, "0")}.png`,
-        omitBackground: true,
-      });
-    }
   await page.evaluate(async () => {
-    e.stop();
-    document
-      .getElementById("cat")
-      .replaceWith(document.createElement("canvas"));
-    document.querySelector("canvas").id = "cat";
-    document.querySelector("canvas").style.cssText = "width:420px;height:440px";
+    const { ORANGE_WHITE_LONGHAIR, resolveCatRenderMode } =
+      await import("/src/catSkins.ts");
+    window.skin = ORANGE_WHITE_LONGHAIR;
+    window.resolveCatRenderMode = resolveCatRenderMode;
     const { KuroCatEngine3D } = await import("/src/catEngine3d.ts");
     window.g = new KuroCatEngine3D(document.getElementById("cat"), {
       embedded: false,
@@ -178,6 +89,8 @@ try {
   });
   checks.threeD = await page.evaluate(() => {
     const out = {};
+    out.legacyFacai2dBecomes3d = resolveCatRenderMode(skin.id, "2d") === "3d";
+    out.otherCatsKeep2d = resolveCatRenderMode("black", "2d") === "2d";
     out.headSwats = rub3();
     out.purrSuppressed = !g.petting;
     g.update(0.016);
@@ -185,9 +98,31 @@ try {
     g.headPatSwat.startedAt = g.elapsed * 1000 - 350;
     g.update(0.016);
     out.pawMoves = g.paws.R.pos.distanceTo(raised) > 0.3;
+    out.angryEyes = g.longhairModel.eyes.every(
+      (eye) => eye.uniforms.uAnger.value > 0.9,
+    );
+    out.airplaneEars = g.ears.every(
+      (ear) => Math.abs(ear.group.rotation.z) > ear.tilt,
+    );
+    out.angerMark = g.angerSprite.visible;
+    out.palmPadsVisible =
+      g.swatPalm.visible && g.swatPalm.children.length === 2;
+    const normal = new g.camera.position.constructor(0, 0, 1).applyQuaternion(
+      g.swatPalm.quaternion,
+    );
+    const towardViewer = g.camera.position
+      .clone()
+      .sub(g.swatPalm.position)
+      .normalize();
+    out.palmFacesViewer = normal.dot(towardViewer) > 0.95;
+    out.swatDoesNotLatchAnnoyance = !g.isCross;
     out.alphaRenderer = g.renderer.getContext().getContextAttributes().alpha;
     g.setPrivacyMode(true);
     out.privacyCancels = !g.headPatSwat.isActive(g.elapsed * 1000);
+    g.update(0.05);
+    out.privacyClearsAnger = g.longhairModel.eyes.every(
+      (eye) => eye.uniforms.uAnger.value === 0,
+    );
     g.headPatSwat.rolledAt = -Infinity;
     out.privacyNoSwat = !rub3();
     g.setPrivacyMode(false);
@@ -200,6 +135,11 @@ try {
     g.headPatSwat.startedAt = g.elapsed * 1000 - 1000;
     g.update(0.016);
     out.completes = g.headPatSwat.pose(g.elapsed * 1000) === null;
+    out.neutralEyesRestored = g.longhairModel.eyes.every(
+      (eye) => eye.uniforms.uAnger.value === 0,
+    );
+    out.angerMarkRestored = !g.angerSprite.visible;
+    out.palmTucksAway = !g.swatPalm.visible;
     g.headPatSwat.cancel();
     g.headPatSwat.rolledAt = -Infinity;
     const { y, xs } = headLine(),
@@ -218,15 +158,45 @@ try {
       g.onWindowCursor(x, 0.64, true);
     }
     out.bellyDoesNotSwat = !g.headPatSwat.isActive(g.elapsed * 1000);
+    g.headPatSwat.resetGesture();
+    g.headPatSwat.rolledAt = -Infinity;
+    g.setTailPickerActive(true);
+    out.pickerDoesNotSwat = !rub3();
+    g.setTailPickerActive(false);
+    for (const layout of ["65", "108"]) {
+      g.setKeyboardConfig(layout, "cat");
+      g.update(0.016);
+      g.renderer.render(g.scene, g.camera);
+      const p = g.desk.keyTopWorld("enter").clone().project(g.camera);
+      const hit = g.hitTestKeyAtClientPoint((p.x + 1) * 210, (1 - p.y) * 220);
+      out["pickerRaycast" + layout] = hit?.id === "enter";
+      const bounds = g.getKeyboardClientBounds();
+      out["pickerBounds" + layout] = bounds.width > 100 && bounds.height > 10;
+    }
+    g.setKeyboardConfig("65", "cat");
+    g.update(0.016);
+    g.renderer.render(g.scene, g.camera);
     return out;
   });
   for (const [key, value] of Object.entries(checks.threeD))
     assert.equal(value, true, `3D ${key}`);
-  await page.evaluate(() => {
-    g.headPatSwat.rolledAt = -Infinity;
-    g.headPatSwat.resetGesture();
-    rub3();
-  });
+  if (capture)
+    await page.evaluate(async () => {
+      g.renderer.dispose();
+      const previous = document.getElementById("cat");
+      const canvas = document.createElement("canvas");
+      canvas.id = "cat";
+      canvas.style.cssText = previous.style.cssText;
+      previous.replaceWith(canvas);
+      const { KuroCatEngine3D } = await import("/src/catEngine3d.ts");
+      window.g = new KuroCatEngine3D(canvas, { embedded: false });
+      g.setCatSkin(skin);
+      g.setHeadPatSwatChance(1);
+      g.resize();
+      g.update(0.016);
+      g.renderer.render(g.scene, g.camera);
+      rub3();
+    });
   if (capture)
     for (let i = 0; i < 30; i++) {
       await page.evaluate((t) => {
@@ -239,6 +209,123 @@ try {
         omitBackground: true,
       });
     }
+  const ui = await browser.newPage({ viewport: { width: 420, height: 440 } });
+  const uiErrors = [];
+  ui.on("pageerror", (error) => uiErrors.push(error.message));
+  await ui.addInitScript(() => {
+    let id = 1;
+    const callbacks = new Map();
+    window.testEvents = {};
+    window.testSettings = {
+      x: null,
+      y: null,
+      scale: 1,
+      alwaysOnTop: true,
+      clickThroughLocked: false,
+      showKeyBubbles: true,
+      soundEnabled: false,
+      autostart: false,
+      catBreed: "orange-white-longhair",
+      mcpEnabled: false,
+      mcpPort: 27420,
+      keyboardLayout: "65",
+      keyboardOrientation: "cat",
+      tailKeyMode: "smart",
+      tailKeyIds: ["enter"],
+      privacyPasswordGuard: true,
+      obsEnabled: false,
+      obsPort: 27421,
+      obsHidePet: false,
+      renderMode: "2d",
+      collarColor: "none",
+      headphoneMode: "off",
+    };
+    window.__TAURI_INTERNALS__ = {
+      metadata: {
+        currentWindow: { label: "main" },
+        currentWebview: { label: "main" },
+      },
+      transformCallback: (f) => {
+        const n = id++;
+        callbacks.set(n, f);
+        return n;
+      },
+      unregisterCallback: (n) => callbacks.delete(n),
+      invoke: async (cmd, args) => {
+        if (cmd === "get_settings") return structuredClone(window.testSettings);
+        if (cmd === "get_cats") {
+          const m = await import("/src/catSkins.ts");
+          return m.DEFAULT_BUILTIN_CATS;
+        }
+        if (cmd === "get_app_version") return "5.1.0";
+        if (cmd === "plugin:event|listen") {
+          window.testEvents[args.event] = callbacks.get(args.handler);
+          return id++;
+        }
+        if (cmd === "is_win7_ulw_mode" || cmd === "get_game_active")
+          return false;
+        if (cmd === "update_settings") {
+          window.testSettings = { ...args.patch };
+          return structuredClone(window.testSettings);
+        }
+        return null;
+      },
+    };
+  });
+  await ui.goto("http://127.0.0.1:1456/menu.html");
+  await ui.waitForFunction(() =>
+    document.querySelector('[data-breed="orange-white-longhair"]'),
+  );
+  assert.equal(await ui.locator("#render-mode-row").isVisible(), false);
+  await ui.evaluate(() =>
+    document.querySelector('[data-rendermode="2d"]').click(),
+  );
+  await ui.waitForFunction(() => window.testSettings.renderMode === "3d");
+  await ui.goto("http://127.0.0.1:1456/index.html");
+  await ui.waitForFunction(
+    () =>
+      !document.querySelector("#pet-canvas-3d").classList.contains("hidden"),
+  );
+  assert.equal(await ui.locator("#pet-canvas").isVisible(), false);
+  await ui.waitForFunction(
+    () => typeof window.testEvents["kuro-open-tail-picker"] === "function",
+  );
+  await ui.evaluate(() =>
+    window.testEvents["kuro-open-tail-picker"]({ payload: null }),
+  );
+  await ui.waitForFunction(
+    () =>
+      !document.querySelector("#tail-picker-bar").classList.contains("hidden"),
+  );
+  assert.equal(await ui.locator("#pet-canvas").isVisible(), false);
+  assert.equal(await ui.locator("#pet-canvas-3d").isVisible(), true);
+
+  await ui.goto('http://127.0.0.1:1456/obs.html?breed=orange-white-longhair&mode=2d');
+  await ui.waitForFunction(()=>!document.querySelector('#obs-canvas-3d').classList.contains('hidden'));
+  assert.equal(await ui.locator('#obs-canvas').isVisible(), false);
+  await ui.addInitScript(() => {
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (type, ...args) {
+      if (["webgl", "webgl2", "experimental-webgl"].includes(type)) return null;
+      return getContext.call(this, type, ...args);
+    };
+  });
+  await ui.goto('http://127.0.0.1:1456/index.html');
+  await ui.waitForFunction(
+    () => !document.querySelector("#render-error").classList.contains("hidden"),
+  );
+  assert.equal(await ui.locator("#pet-canvas").isVisible(), false);
+  assert.deepEqual(uiErrors, []);
+  checks.ui = {
+    facaiMenuHides2d: true,
+    forced2dClickStill3d: true,
+    mainUses3d: true,
+    pickerStays3d: true,
+    obsOverrideStays3d: true,
+    missingGpuShowsErrorWithout2d: true,
+  };
+  await ui.close();
+
   checks.errors = errors;
   assert.deepEqual(errors, []);
   writeFileSync(

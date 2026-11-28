@@ -40,9 +40,20 @@ pub fn default_render_mode() -> String {
 }
 
 pub fn normalize_render_mode(raw: &str) -> String {
+    if FACAI_ONLY {
+        return "3d".to_string();
+    }
     match raw.trim().to_ascii_lowercase().as_str() {
         "2d" => "2d".to_string(),
         _ => "3d".to_string(),
+    }
+}
+
+pub fn normalize_cat_render_mode(raw: &str, cat_breed: &str) -> String {
+    if cat_breed == "orange-white-longhair" {
+        "3d".to_string()
+    } else {
+        normalize_render_mode(raw)
     }
 }
 
@@ -278,7 +289,7 @@ pub fn load_settings() -> AppSettings {
             parsed.scale = parsed.scale.clamp(0.20, 1.50);
             parsed.tail_key_mode = normalize_tail_key_mode(&parsed.tail_key_mode);
             parsed.tail_key_ids = normalize_tail_key_ids(&parsed.tail_key_ids);
-            parsed.render_mode = normalize_render_mode(&parsed.render_mode);
+            parsed.render_mode = normalize_cat_render_mode(&parsed.render_mode, &parsed.cat_breed);
             parsed.collar_color = normalize_collar_color(&parsed.collar_color);
             parsed.headphone_mode = normalize_headphone_mode(&parsed.headphone_mode);
             parsed.head_pat_swat_chance = normalize_head_pat_swat_chance(parsed.head_pat_swat_chance);
@@ -514,6 +525,13 @@ pub fn create_desktop_shortcut() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn facai_is_3d_even_with_legacy_2d_settings() {
+        assert_eq!(normalize_cat_render_mode("2d", "orange-white-longhair"), "3d");
+        assert_eq!(normalize_cat_render_mode("3d", "orange-white-longhair"), "3d");
+        assert_eq!(normalize_cat_render_mode("2d", "black"), if FACAI_ONLY { "3d" } else { "2d" });
+    }
 
     #[test]
     fn head_pat_swat_chance_defaults_and_normalizes() {

@@ -243,6 +243,7 @@ fn execute_tool(name: &str, args: &Value, on_change: &dyn Fn()) -> Value {
             }
             let mut s = load_settings();
             s.cat_breed = id.clone();
+            s.render_mode = crate::config::normalize_cat_render_mode(&s.render_mode, &s.cat_breed);
             save_settings(&s);
             on_change();
             ok_text(json!({
@@ -334,6 +335,7 @@ fn execute_tool(name: &str, args: &Value, on_change: &dyn Fn()) -> Value {
                     s.autostart = b;
                 }
             }
+            s.render_mode = crate::config::normalize_cat_render_mode(&s.render_mode, &s.cat_breed);
             save_settings(&s);
             on_change();
             ok_text(serde_json::to_value(&s).unwrap_or(json!({})))

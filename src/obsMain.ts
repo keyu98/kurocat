@@ -5,7 +5,7 @@ import {
   type TailKeyMode,
 } from './catEngine';
 import { catAudio } from './audio';
-import { DEFAULT_BUILTIN_CATS, DEFAULT_CAT_ID, type CatSkinConfig } from './catSkins';
+import { DEFAULT_BUILTIN_CATS, DEFAULT_CAT_ID, requires3D, resolveCatRenderMode, type CatSkinConfig } from './catSkins';
 import type { KeyboardLayoutId } from './keyboardLayout';
 import type { CollarColorId, KuroCatEngine3D } from './catEngine3d';
 
@@ -125,8 +125,11 @@ function syncObs3D(
   tailIds: string[],
   showBubbles: boolean,
 ): void {
+  const only3D = requires3D(activeCat?.id);
+  if (only3D) { engine.stop(); canvas.classList.add('hidden'); }
   const want3d = mode === '3d' && activeCat?.id !== 'dafeiyu' && !webglBlocked;
   if (!want3d) {
+    if (only3D) { engine3d?.stop(); canvas3d.classList.add('hidden'); active3d = false; return; }
     if (active3d) {
       engine3d?.stop();
       canvas3d.classList.add('hidden');
@@ -195,7 +198,7 @@ function applyState(): void {
   const showBubbles =
     overrideBubbles !== null ? overrideBubbles : currentSettings.showKeyBubbles !== false;
   const mode: ObsRenderMode =
-    overrideMode || (currentSettings.renderMode === '2d' ? '2d' : '3d');
+    resolveCatRenderMode(activeCat?.id, overrideMode || currentSettings.renderMode);
   const collar: CollarColorId =
     overrideCollar ||
     (currentSettings.collarColor === 'red' ||
@@ -206,7 +209,6 @@ function applyState(): void {
       : 'none');
 
   engine.showKeyBubbles = showBubbles;
-  engine.setHeadPatSwatChance(currentSettings.headPatSwatChance);
   engine.setCatAppearance(activeCat?.id || 'black', activeCat);
   engine.setHeadphones(computeObsHeadphonesOn(activeCat));
   engine.setKeyboardConfig(layout, orient);
@@ -321,5 +323,5 @@ function connectStream(): void {
 }
 
 applyState();
-engine.start();
+if (!canvas.classList.contains('hidden')) engine.start();
 connectStream();

@@ -415,6 +415,8 @@ function eyeMaterial(): THREE.ShaderMaterial {
     depthWrite: false,
     uniforms: {
       uOpen: { value: 1 },
+      uAnger: { value: 0 },
+      uSide: { value: 1 },
       uGaze: { value: new THREE.Vector2() },
       uTop: { value: new THREE.Color() },
       uBottom: { value: new THREE.Color() },
@@ -429,6 +431,7 @@ function eyeMaterial(): THREE.ShaderMaterial {
     `,
     fragmentShader: `
       uniform float uOpen;
+      uniform float uAnger, uSide;
       uniform vec2 uGaze;
       uniform vec3 uTop, uBottom, uPupil;
       varying vec2 vUv;
@@ -452,7 +455,7 @@ function eyeMaterial(): THREE.ShaderMaterial {
           float lowerGlow = smoothstep(0.05, 0.82, -p.y) * (1.0 - smoothstep(0.65, 0.94, r));
           amber = mix(amber, min(amber * 1.20 + 0.04, vec3(1.0)), lowerGlow * 0.45);
           color = mix(amber, amber * 0.53, smoothstep(0.83, 0.98, r) * 0.55);
-          float pupilR = length((p - uGaze) / vec2(0.55, 0.67));
+          float pupilR = length((p - uGaze) / vec2(mix(0.55, 0.28, uAnger), 0.67));
           float pupilAA = max(0.023, fwidth(pupilR) * 0.58);
           float pupil = (1.0 - smoothstep(1.0 - pupilAA, 1.0 + pupilAA, pupilR))
                         * (1.0 - smoothstep(0.90, 0.97, r));
@@ -460,6 +463,12 @@ function eyeMaterial(): THREE.ShaderMaterial {
           float glint = 1.0 - smoothstep(0.145, 0.190, length(p - vec2(-0.28, 0.32) - uGaze * 0.44));
           float reflection = 1.0 - smoothstep(0.058, 0.090, length(p - vec2(0.27, -0.30) - uGaze * 0.34));
           color = mix(color, vec3(1.0, 0.97, 0.87), max(glint, reflection * 0.94));
+          // Slanted upper lids descend toward the nose. Fur shows through
+          // above the lid, while a dark rim makes the scowl readable at pet size.
+          float lid = mix(1.18, 0.16, uAnger) + uSide * p.x * 0.38 * uAnger;
+          float lidDist = p.y - lid;
+          alpha *= 1.0 - smoothstep(-aa, aa, lidDist);
+          color = mix(color, uPupil, smoothstep(-0.10, -0.02, lidDist) * uAnger * 0.82);
         }
         gl_FragColor = vec4(color, alpha);
         #include <colorspace_fragment>
@@ -622,9 +631,11 @@ export class LonghairModel3D {
     this.coat.uniforms.uNeckFill.value = 0.12 + 0.88 * Math.max(sleep, nod * 0.36);
   }
 
-  public pose(open: number, gazeX: number, gazeY: number): void {
-    for (const eye of this.eyes) {
+  public pose(open: number, gazeX: number, gazeY: number, anger = 0): void {
+    for (const [index, eye] of this.eyes.entries()) {
       eye.uniforms.uOpen.value = open;
+      eye.uniforms.uAnger.value = anger;
+      eye.uniforms.uSide.value = index === 0 ? -1 : 1;
       eye.uniforms.uGaze.value.set(gazeX * 0.14, gazeY * 0.12);
     }
   }
