@@ -322,21 +322,36 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
           p = vLocation;
           color = uCream;
 
-          // The saddle and rump wrap around the back, with uneven patches visible on the flanks.
-          float wrap = smoothstep(0.25, 0.49, -p.z + 0.31 * abs(p.x));
-          float saddle = oval(vec2(p.x, p.y + 0.10 * sin(3.0 * p.x)),
-                              vec2(0.05, 0.27), vec2(1.20, 0.48));
-          float rump = oval(p.xy, vec2(-0.23, -0.66), vec2(0.93, 0.35));
-          float leftFlank = oval(vec2(p.x + 0.071 * sin(p.y * 4.0), p.y + 0.14 * p.z),
-                                 vec2(-0.88, 0.04), vec2(0.35, 0.69));
-          float rightFlank = oval(vec2(p.x - 0.067 * sin(p.y * 4.0), p.y - 0.10 * p.z),
-                                  vec2(0.92, -0.06), vec2(0.32, 0.60));
-          float sidePatch = max(leftFlank, rightFlank) * (1.0 - smoothstep(0.42, 0.72, p.z));
-          float nape = oval(vec2(p.x + 0.045 * sin(p.y * 13.0), p.y),
-                            vec2(0.085, 0.81), vec2(0.69, 0.51))
-                       * (1.0 - smoothstep(-0.31, -0.025, vFace.z));
-          float backPatch = max(nape, max(saddle, rump) * wrap);
-          color = mix(color, uFlank, max(backPatch, sidePatch));
+          // Both references share one coat: a narrow dorsal stripe, shoulder
+          // patches on both sides and one rear flank patch. Rest coordinates
+          // keep all markings attached during breathing, sleep and swats.
+          float side = sign(p.x);
+          float flow = p.y + 0.18 * abs(p.x);
+          float locks = 0.024 * sin(19.0 * flow + side * 1.7)
+                      + 0.013 * sin(43.0 * flow - side * 0.8);
+          float fibers = sin(235.0 * p.x + 17.0 * p.y + 0.8 * sin(23.0 * p.y));
+          float raggedEdge = locks * 1.5 + 0.018 * fibers;
+          vec2 shoulder = vec2(p.x - 0.27 + 0.035 * sin(7.0 * p.y), (p.y - 0.50) * 0.92);
+          float shoulderPatch = 1.0 - smoothstep(-0.10, 0.08,
+            length(shoulder / vec2(0.52, 0.32)) - 1.0 + raggedEdge);
+          float frontShoulderPatch = shoulderPatch;
+          vec2 shoulderOpposite = vec2(p.x + 0.30 + 0.030 * sin(8.0 * p.y), (p.y - 0.48) * 0.92);
+          float shoulderOppositePatch = 1.0 - smoothstep(-0.10, 0.08,
+            length(shoulderOpposite / vec2(0.46, 0.30)) - 1.0 + raggedEdge);
+          shoulderPatch = max(shoulderPatch, shoulderOppositePatch);
+          vec2 rear = vec2(p.x + 0.44 + 0.04 * sin(6.0 * p.y),
+                           p.y + 0.30 + 0.45 * (p.x + 0.44));
+          float rearPatch = 1.0 - smoothstep(-0.10, 0.08,
+            length(rear / vec2(0.36, 0.48)) - 1.0 + raggedEdge);
+          float spine = 0.025 + 0.026 * sin(4.7 * p.y + 0.3) + 0.012 * sin(11.0 * p.y);
+          float spineWidth = 0.205 + 0.025 * sin(8.0 * p.y - 0.6);
+          float spinePatch = 1.0 - smoothstep(-0.08, 0.08,
+            abs(p.x - spine) - spineWidth + raggedEdge);
+          spinePatch *= smoothstep(-0.74, -0.66, p.y) * smoothstep(0.30, 0.52, -p.z);
+          float shoulderCoat = shoulderPatch * smoothstep(-0.55, 0.30, -p.z);
+          float rearCoat = rearPatch * smoothstep(0.02, 0.30, -p.z);
+          float backPatch = max(max(shoulderCoat, rearCoat), spinePatch);
+          color = mix(color, uFlank, backPatch * (1.0 - vHeadMix));
 
           // The broad ivory bib ends in a few rounded, downward locks.
           float bibEdge = -0.26 + 0.84 * abs(p.x) + 0.051 * cos(p.x * 23.0);
@@ -350,6 +365,12 @@ function sculptMaterial(part: 'COAT' | 'EAR' | 'LIMB' | 'SOLID'): THREE.ShaderMa
           float folds = max(furLock(lock, vec2(0.105, 0.54), vec2(0.252, -0.13), -0.073, 0.062),
                             furLock(lock, vec2(0.287, 0.61), vec2(0.480, 0.05), -0.043, 0.053));
           color *= 1.0 - 0.080 * folds * smoothstep(0.46, 0.87, p.z);
+          float frontShoulder = frontShoulderPatch * smoothstep(0.06, 0.34, p.z)
+                              * smoothstep(0.55, 0.75, abs(p.x));
+          color = mix(color, uFlank, frontShoulder * 0.60 * (1.0 - vHeadMix));
+          float frontRear = rearPatch * smoothstep(0.06, 0.34, p.z)
+                          * smoothstep(0.54, 0.74, abs(p.x));
+          color = mix(color, uFlank, frontRear * 0.45 * (1.0 - vHeadMix));
           color = mix(color, faceColor, vHeadMix);
         #elif defined(EAR)
           vec3 p = vLocation;
