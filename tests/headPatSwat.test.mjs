@@ -13,7 +13,7 @@ const js = ts.transpileModule(source, {
     module: ts.ModuleKind.ESNext,
   },
 }).outputText;
-const { HeadPatSwat, normalizeSwatChance, SWAT_DURATION_MS } = await import(
+const { HeadPatSwat, normalizeSwatChance, SWAT_DURATION_MS, SWAT_IMPACT_MS } = await import(
   `data:text/javascript;base64,${Buffer.from(js).toString("base64")}`
 );
 
@@ -135,4 +135,32 @@ test("persisted/custom chances normalize safely", () => {
   assert.equal(normalizeSwatChance(-1), 0);
   assert.equal(normalizeSwatChance(2), 1);
   assert.equal(normalizeSwatChance(0.3), 0.3);
+});
+
+test("contact fires once, including when a frame steps across the impact time", () => {
+  const s = new HeadPatSwat();
+  assert.equal(rub(s, 0), true);
+  const contact = 100 + SWAT_IMPACT_MS;
+  assert.equal(s.takeImpact(contact - 16), false);
+  assert.equal(s.takeImpact(contact + 17), true);
+  assert.equal(s.takeImpact(contact + 33), false);
+  assert.equal(s.takeImpact(1000), false);
+  assert.equal(rub(s, 3200), true);
+  s.cancel();
+  assert.equal(s.takeImpact(3700), false);
+  assert.equal(rub(s, 6400), true);
+  assert.equal(s.takeImpact(8000), false, "do not stamp a stale completed action");
+  assert.equal(s.takeImpact(6900), false, "expired contact stays consumed");
+});
+
+test("the half-grip tightens as the raised paw punches forward and releases on recovery", () => {
+  const s = new HeadPatSwat();
+  rub(s, 0);
+  const raised = s.pose(100 + SWAT_DURATION_MS * 0.22);
+  const hit = s.pose(100 + SWAT_IMPACT_MS);
+  const recovery = s.pose(100 + SWAT_DURATION_MS * 0.9);
+  assert.ok(raised.grip > 0 && raised.grip < hit.grip);
+  assert.equal(hit.grip, 1);
+  assert.ok(hit.reach > raised.reach + 0.9);
+  assert.ok(recovery.grip < hit.grip);
 });

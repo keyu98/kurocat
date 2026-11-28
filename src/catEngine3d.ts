@@ -6,6 +6,7 @@ import type { KeyboardOrientation, TailKeyMode } from './catEngine';
 import { DEFAULT_TAIL_KEY_IDS } from './catEngine';
 import { catAudio } from './audio';
 import { HeadPatSwat, normalizeSwatChance } from './headPatSwat';
+import { ScreenPawPrint3D } from './screenPawPrint3d';
 import {
   FurShaderSystem,
   resolveFurPalette3D,
@@ -516,7 +517,13 @@ export class KuroCatEngine3D {
 
   public setTailPickerActive(active: boolean): void {
     this.tailPickerActive = active;
-    if (active) this.headPatSwat.cancel();
+    if (active) this.cancelHeadPatSwat();
+  }
+
+  private cancelHeadPatSwat(): void {
+    this.headPatSwat.cancel();
+    this.swatPalm.visible = false;
+    this.pawPrint.clear();
   }
 
   public hitTestKeyAtClientPoint(clientX: number, clientY: number) {
@@ -614,8 +621,10 @@ export class KuroCatEngine3D {
   // Shared materials updated on skin switch
   private readonly pawMat: THREE.ShaderMaterial;
   private readonly swatPalm = new THREE.Group();
+  private readonly swatToes: THREE.Group[] = [];
   private readonly swatPalmMat = createHeadsetMaterial('#fff7e9', 0.06, 0.10, '#fff4df');
   private readonly swatPadMat = createHeadsetMaterial('#e7a5a2', 0.10, 0.12, '#f9d4c8');
+  private readonly pawPrint: ScreenPawPrint3D;
   private readonly hindPaws: THREE.Mesh[] = [];
   private readonly toeMat = new THREE.MeshBasicMaterial({ color: '#343640', depthTest: true });
   private readonly lidArcMat = new THREE.MeshBasicMaterial({
@@ -850,6 +859,8 @@ export class KuroCatEngine3D {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.camera = new THREE.PerspectiveCamera(22, 1.35, 0.1, 100);
+    this.scene.add(this.camera);
+    this.pawPrint = new ScreenPawPrint3D(this.camera);
     this.desk = new KeyboardAndMouse3D(this.scene);
     this.pawMat = this.furSystem.createMaterial('PAW');
 
@@ -1175,30 +1186,30 @@ export class KuroCatEngine3D {
       });
     }
 
-    // Two merged meshes form a white mitten and five softly raised pink pads.
-    // They share the existing studio shader, so this stays a true 3D paw.
+    // Compact half-fist: four adjacent toes curl over the palm, rather than
+    // spreading into an open hand. Their pads turn underneath on the punch.
     const padSphere = new THREE.SphereGeometry(1, 18, 12);
-    const lobes = [
-      [0, -0.028, 0, 0.135, 0.125, 0.065],
-      [-0.12, 0.084, 0.004, 0.063, 0.078, 0.060],
-      [-0.045, 0.142, 0.004, 0.067, 0.083, 0.061],
-      [0.045, 0.142, 0.004, 0.067, 0.083, 0.061],
-      [0.12, 0.084, 0.004, 0.063, 0.078, 0.060],
-    ];
-    const parts = (pads: boolean) => lobes.map(([x, y, z, sx, sy, sz], index) => ({
-      geo: padSphere,
-      matrix: new THREE.Matrix4().compose(
-        new THREE.Vector3(x, y, pads ? 0.066 : z),
-        new THREE.Quaternion(),
-        pads ? new THREE.Vector3(index === 0 ? 0.078 : 0.037, index === 0 ? 0.060 : 0.047, 0.022)
-          : new THREE.Vector3(sx, sy, sz),
-      ),
-    }));
+    const pawPart = (mat: THREE.Material, pos: number[], size: number[]) => {
+      const mesh = new THREE.Mesh(padSphere, mat);
+      mesh.position.set(pos[0], pos[1], pos[2]);
+      mesh.scale.set(size[0], size[1], size[2]);
+      return mesh;
+    };
     this.swatPalm.add(
-      new THREE.Mesh(mergeStaticGeometries(parts(false)), this.swatPalmMat),
-      new THREE.Mesh(mergeStaticGeometries(parts(true)), this.swatPadMat),
+      pawPart(this.swatPalmMat, [0, -0.025, 0], [0.142, 0.128, 0.100]),
+      pawPart(this.swatPadMat, [0, -0.041, 0.098], [0.080, 0.062, 0.021]),
     );
-    padSphere.dispose();
+    for (let i = 0; i < 4; i++) {
+      const toe = new THREE.Group();
+      const edge = i === 0 || i === 3;
+      toe.position.set((i - 1.5) * 0.063, edge ? 0.057 : 0.074, 0.027);
+      toe.add(
+        pawPart(this.swatPalmMat, [0, 0.045, 0.012], [0.047, 0.078, 0.055]),
+        pawPart(this.swatPadMat, [0, 0.056, 0.062], [0.028, 0.036, 0.016]),
+      );
+      this.swatToes.push(toe);
+      this.swatPalm.add(toe);
+    }
     this.swatPalm.visible = false;
     this.scene.add(this.swatPalm);
 
@@ -1548,7 +1559,7 @@ export class KuroCatEngine3D {
   }
 
   public stop(): void {
-    this.headPatSwat.cancel();
+    this.cancelHeadPatSwat();
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
@@ -1594,6 +1605,7 @@ export class KuroCatEngine3D {
       this.elapsed - this.cursorActiveAt < 2.4 ||
       this.isCross ||
       this.headPatSwat.isActive(this.elapsed * 1000) ||
+      this.pawPrint.sprite.visible ||
       this.petting ||
       this.elapsed < this.curiousUntil ||
       this.popups.length > 0 ||
@@ -1637,7 +1649,7 @@ export class KuroCatEngine3D {
   };
 
   public setCatSkin(skin: CatSkinConfig): void {
-    if (this.currentSkin?.id !== skin.id) this.headPatSwat.cancel();
+    if (this.currentSkin?.id !== skin.id) this.cancelHeadPatSwat();
     this.currentSkin = skin;
     this.swatPalmMat.uniforms.uBase.value.set(skin.bellyBibColor ?? skin.pawColor ?? skin.furColor);
     const p = resolveFurPalette3D(skin, this.renderStyle);
@@ -1781,7 +1793,7 @@ export class KuroCatEngine3D {
   }
 
   public setPrivacyMode(active: boolean): void {
-    if (active) this.headPatSwat.cancel();
+    if (active) this.cancelHeadPatSwat();
     this.privacyMode = active;
     if (active) {
       this.desk.releaseAllKeys();
@@ -2704,11 +2716,19 @@ export class KuroCatEngine3D {
     this.swatPalm.visible = Boolean(longhair && swatPose && swatPose.lift > 0.12 && !this.privacyMode);
     if (this.swatPalm.visible && swatPose) {
       this.swatPalm.position.copy(this.paws.R.pos);
-      // Turn the underside toward the viewer while raising and sweeping.
+      // Show the underside on the windup; curl the toes into rounded knuckles
+      // and tip the fist forward at contact. The central pad stays visible.
       this.swatPalm.quaternion.copy(this.camera.quaternion);
-      this.swatPalm.rotateZ(-0.22 + swatPose.x * 0.20);
-      this.swatPalm.scale.setScalar(swatPose.weight * (1 + swatPose.reach * 0.15));
+      this.swatPalm.rotateZ(-0.20 + swatPose.x * 0.15);
+      this.swatPalm.rotateY(-0.28);
+      this.swatPalm.rotateX(-0.18 * swatPose.grip);
+      this.swatPalm.scale.setScalar(swatPose.weight * (1.12 + swatPose.reach * 0.18));
+      for (const toe of this.swatToes) toe.rotation.x = 0.65 + swatPose.grip * 1.45;
     }
+    if (this.headPatSwat.takeImpact(t * 1000)) {
+      this.pawPrint.stamp(this.paws.R.pos, this.camera, t);
+    }
+    this.pawPrint.update(t, this.camera);
 
     // 10) Floating Key Bubbles, Anger Mark 💢 & Sleep Zzz FX
     for (let i = this.popups.length - 1; i >= 0; i--) {

@@ -1,6 +1,7 @@
 export const DEFAULT_HEAD_PAT_SWAT_CHANCE = 0.25;
 export const SWAT_DURATION_MS = 780;
 export const SWAT_COOLDOWN_MS = 3000;
+export const SWAT_IMPACT_MS = SWAT_DURATION_MS * 0.52;
 
 export function normalizeSwatChance(value: number | undefined): number {
   return typeof value === 'number' && Number.isFinite(value)
@@ -11,18 +12,19 @@ export function normalizeSwatChance(value: number | undefined): number {
 // x/lift/reach are local to the 3D cat;
 // the original body, markings, tail and materials continue rendering throughout.
 const POSES = [
-  { t: 0, x: 0.32, lift: 0, reach: 0 },
-  { t: 0.22, x: 0.95, lift: 0.65, reach: 0.1 },
-  { t: 0.38, x: 0.65, lift: 0.84, reach: 0.65 },
-  { t: 0.52, x: -0.55, lift: 0.7, reach: 1 },
-  { t: 0.72, x: 0.2, lift: 0.4, reach: 0.25 },
-  { t: 1, x: 0.32, lift: 0, reach: 0 },
+  { t: 0, x: 0.32, lift: 0, reach: 0, grip: 0.35 },
+  { t: 0.22, x: 0.95, lift: 0.65, reach: 0.1, grip: 0.35 },
+  { t: 0.38, x: 1.05, lift: 0.95, reach: 0.2, grip: 0.55 },
+  { t: 0.52, x: 1.3, lift: 1.12, reach: 1.15, grip: 1 },
+  { t: 0.72, x: 0.4, lift: 0.4, reach: 0.25, grip: 0.7 },
+  { t: 1, x: 0.32, lift: 0, reach: 0, grip: 0.35 },
 ];
 
 export class HeadPatSwat {
   public chance = DEFAULT_HEAD_PAT_SWAT_CHANCE;
   private startedAt = -Infinity;
   private rolledAt = -Infinity;
+  private impactPending = false;
   private last: { x: number; y: number; at: number } | null = null;
   private direction: { x: number; y: number } | null = null;
   private travel = 0;
@@ -37,6 +39,7 @@ export class HeadPatSwat {
 
   public cancel(): void {
     this.startedAt = -Infinity;
+    this.impactPending = false;
     this.resetGesture();
   }
 
@@ -90,8 +93,16 @@ export class HeadPatSwat {
     this.rolledAt = now; // Normal reactions also consume this roll's cooldown.
     if (random() >= normalizeSwatChance(this.chance)) return false;
     this.startedAt = now;
+    this.impactPending = true;
     this.resetGesture();
     return true;
+  }
+
+  /** Consume once on the first frame reaching contact, including a skipped frame. */
+  public takeImpact(now: number): boolean {
+    if (!this.impactPending || now < this.startedAt + SWAT_IMPACT_MS) return false;
+    this.impactPending = false;
+    return this.isActive(now);
   }
 
   public pose(now: number) {
@@ -108,6 +119,7 @@ export class HeadPatSwat {
       x: mix(a.x, b.x),
       lift: mix(a.lift, b.lift),
       reach: mix(a.reach, b.reach),
+      grip: mix(a.grip, b.grip),
       weight: Math.min(1, t / 0.12, (1 - t) / 0.18),
       anger: Math.min(1, t / 0.08, (1 - t) / 0.22),
     };

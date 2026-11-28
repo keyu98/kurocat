@@ -95,7 +95,7 @@ try {
     out.purrSuppressed = !g.petting;
     g.update(0.016);
     const raised = g.paws.R.pos.clone();
-    g.headPatSwat.startedAt = g.elapsed * 1000 - 350;
+    g.headPatSwat.startedAt = g.elapsed * 1000 - 180;
     g.update(0.016);
     out.pawMoves = g.paws.R.pos.distanceTo(raised) > 0.3;
     out.angryEyes = g.longhairModel.eyes.every(
@@ -106,7 +106,9 @@ try {
     );
     out.angerMark = g.angerSprite.visible;
     out.palmPadsVisible =
-      g.swatPalm.visible && g.swatPalm.children.length === 2;
+      g.swatPalm.visible && g.swatToes.length === 4 &&
+      g.swatToes.every((toe) => toe.children[1].material === g.swatPadMat);
+    const windupCurl = g.swatToes[0].rotation.x;
     const normal = new g.camera.position.constructor(0, 0, 1).applyQuaternion(
       g.swatPalm.quaternion,
     );
@@ -114,11 +116,41 @@ try {
       .clone()
       .sub(g.swatPalm.position)
       .normalize();
-    out.palmFacesViewer = normal.dot(towardViewer) > 0.95;
+    out.palmFacesViewer = normal.dot(towardViewer) > 0.9;
+    out.noPrintBeforeContact = !g.pawPrint.sprite.visible;
+    g.headPatSwat.startedAt = g.elapsed * 1000 - 410;
+    g.update(0.016);
+    out.fistClosesOnContact = g.swatToes.every((toe) => toe.rotation.x > windupCurl + 0.5);
+    out.contactLeavesPrint = g.pawPrint.sprite.visible && g.pawPrint.stampedAt === g.elapsed;
+    out.fistVisibleBeforeInk = g.pawPrint.sprite.material.opacity === 0;
+    const printAt = g.pawPrint.stampedAt;
+    g.scene.updateMatrixWorld(true);
+    const printPosition = () => g.pawPrint.sprite.getWorldPosition(g.paws.R.pos.clone()).project(g.camera);
+    const stamped = printPosition();
+    g.orbitAzimuthTarget = 25;
+    g.update(0.05);
+    out.inkAppearsAfterContact = g.pawPrint.sprite.material.opacity > 0.5;
+    g.scene.updateMatrixWorld(true);
+    out.printFixedOnScreen = printPosition().distanceTo(stamped) < 1e-6;
+    out.onlyOnePrintPerPunch = g.pawPrint.stampedAt === printAt;
+    g.orbitAzimuthTarget = 0;
+    for (let i = 0; i < 12; i++) g.update(0.05);
+    out.printOutlastsFist = !g.swatPalm.visible && g.pawPrint.sprite.visible;
+    for (let i = 0; i < 6; i++) g.update(0.05);
+    out.printFades = g.pawPrint.sprite.material.opacity > 0 && g.pawPrint.sprite.material.opacity < 0.8;
+    for (let i = 0; i < 20; i++) g.update(0.05);
+    out.printExpires = !g.pawPrint.sprite.visible;
     out.swatDoesNotLatchAnnoyance = !g.isCross;
     out.alphaRenderer = g.renderer.getContext().getContextAttributes().alpha;
+    g.headPatSwat.rolledAt = -Infinity;
+    g.headPatSwat.resetGesture();
+    out.resumedForPrivacy = rub3();
+    g.headPatSwat.startedAt = g.elapsed * 1000 - 410;
+    g.update(0.016);
+    out.privacyInterruptsLivePunch = g.headPatSwat.isActive(g.elapsed * 1000) && g.pawPrint.sprite.visible;
     g.setPrivacyMode(true);
     out.privacyCancels = !g.headPatSwat.isActive(g.elapsed * 1000);
+    out.privacyClearsPrint = !g.pawPrint.sprite.visible;
     g.update(0.05);
     out.privacyClearsAnger = g.longhairModel.eyes.every(
       (eye) => eye.uniforms.uAnger.value === 0,
@@ -132,6 +164,15 @@ try {
     g.headPatSwat.rolledAt = -Infinity;
     g.setHeadPatSwatChance(1);
     out.reenabled = rub3();
+    g.headPatSwat.startedAt = g.elapsed * 1000 - 410;
+    g.update(0.016);
+    out.newPunchLeavesNewPrint = g.pawPrint.sprite.visible && g.pawPrint.stampedAt > printAt;
+    g.setTailPickerActive(true);
+    out.pickerClearsPrint = !g.pawPrint.sprite.visible;
+    g.setTailPickerActive(false);
+    g.headPatSwat.rolledAt = -Infinity;
+    g.headPatSwat.resetGesture();
+    out.resumesAfterPicker = rub3();
     g.headPatSwat.startedAt = g.elapsed * 1000 - 1000;
     g.update(0.016);
     out.completes = g.headPatSwat.pose(g.elapsed * 1000) === null;
@@ -198,12 +239,11 @@ try {
       rub3();
     });
   if (capture)
-    for (let i = 0; i < 30; i++) {
-      await page.evaluate((t) => {
-        g.headPatSwat.startedAt = g.elapsed * 1000 - t;
-        g.update(0.016);
+    for (let i = 0; i < 80; i++) {
+      await page.evaluate(() => {
+        g.update(0.032);
         g.renderer.render(g.scene, g.camera);
-      }, i * 32);
+      });
       await page.screenshot({
         path: `${outputDir}/3d-${String(i).padStart(2, "0")}.png`,
         omitBackground: true,
